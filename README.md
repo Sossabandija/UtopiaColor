@@ -2,7 +2,7 @@ Controls for this food chain simulator!
 
 | First Header  | Second Header |
 | ------------- | ------------- |
-| ENTER   Toggle whether the mouse is locked into the screen (mouse movements change camera direction) or is free again |
+| ENTER | Toggle whether the mouse is locked into the screen (mouse movements change camera direction) or is free again |
 | 'WASD' | Move around the gray stick figure viewer guy |
 | SPACE | Make the viewer guy jump |
 | 'C' | Toggle whether you want the camera to follow a nearby creature (cow or carnivore) or the viewer guy |

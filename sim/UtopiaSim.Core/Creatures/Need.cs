@@ -37,6 +37,14 @@ public enum Intent
     Wander = 128,
 }
 
-public enum TargetKind { None, Creature, Water }
+/// <summary>Refuge: un punto de su zona de refugio, hacia donde huye.</summary>
+public enum TargetKind { None, Creature, Water, Refuge }
 
-public enum DeathCause { Starved, Dehydrated, Eaten, Crowded }
+/// <summary>
+/// Starved hambre, Dehydrated sed, Eaten comido, Crowded semilla que cayó en una casilla llena,
+/// Seedling brote que murió antes de establecerse (ver <see cref="SeedlingConfig"/>).
+/// </summary>
+public enum DeathCause { Starved, Dehydrated, Eaten, Crowded, Seedling }
+
+/// <summary>Qué come un animal de una presa: nada, la presa entera (la mata) o un fruto (la planta sigue viva).</summary>
+public enum MealKind { None, Whole, Fruit }

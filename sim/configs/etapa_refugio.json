@@ -1,0 +1,16 @@
+// Refugio parcial de las plantas adultas, vía el gen de etapa (la mejor combinación de refugio_etapa.json).
+//
+// - Al soltar semilla la planta baja a 0.75 (no a 0.5): un herbívoro de etapa 0.5 ya no alcanza a las adultas.
+//   Solo los que evolucionen hacia "tardío" (etapa ≳ 0.54) pueden comérselas.
+// - El gen de etapa de los herbívoros muta lento, para que la población no se disperse de inmediato.
+// - Carnívoros con saciedad y que encuentran pareja a 18 casillas.
+//
+// En el visor, mira el gráfico "Etapa preferida por especie": la línea gris marca desde dónde se alcanza a las adultas.
+{
+  "extends": "etapa.json",
+  "species": [
+    { "name": "planta", "plant": { "sizeLossOnSeed": 0.25 } },
+    { "name": "herbivoro", "mutation": { "etapa": { "maxStep": 0.05 } } },
+    { "name": "carnivoro", "digestDays": 0.5, "mateRangeTiles": 18 }
+  ]
+}

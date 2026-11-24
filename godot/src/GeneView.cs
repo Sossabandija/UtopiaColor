@@ -88,10 +88,14 @@ public partial class GeneView : Control
         var verts = polygon.Vertices.Select(v => ToScreen(v, center, radius)).ToArray();
         DrawColoredPolygon(verts, new Color(0.16f, 0.17f, 0.21f));
         DrawPolyline([.. verts, verts[0]], new Color(1, 1, 1, 0.6f), 1.5f, true);
+        var names = gene!.Config.VertexNames;
         for (int i = 0; i < verts.Length; i++)
         {
-            var label = center + (verts[i] - center) * 1.0f + (verts[i] - center).Normalized() * 12;
-            DrawString(Palette.Font, label + new Vector2(-6, 5), (i + 1).ToString(), HorizontalAlignment.Left, -1, 13, Palette.TextDim);
+            string text = names?[i] ?? (i + 1).ToString();
+            var label = verts[i] + (verts[i] - center).Normalized() * 12;
+            float w = Palette.Font.GetStringSize(text, HorizontalAlignment.Left, -1, 13).X;
+            float x = Math.Clamp(label.X - w / 2, 2, Size.X - w - 2);
+            DrawString(Palette.Font, new Vector2(x, label.Y + 5), text, HorizontalAlignment.Left, -1, 13, Palette.TextDim);
         }
         DrawSymbols(center, radius, shown, Palette.ForSpecies);
     }
@@ -186,8 +190,10 @@ public partial class GeneView : Control
 
         DrawLine(new Vector2(area.Position.X, axisY), new Vector2(area.End.X, axisY), Palette.TextDim, 1);
         bool isStage = sim!.Species.Any(sp => sp.StageGeneIndex == g);
-        DrawString(font, new Vector2(area.Position.X, axisY + 14), isStage ? "0 = temprano" : "0", HorizontalAlignment.Left, -1, 12, Palette.TextDim);
-        DrawString(font, new Vector2(area.Position.X, axisY + 14), isStage ? "1 = tardío" : "1", HorizontalAlignment.Right, area.Size.X, 12, Palette.TextDim);
+        bool isDiet = sim.Species.Any(sp => sp.DietGeneIndex == g);
+        var (left, right) = isStage ? ("0 = temprano", "1 = tardío") : isDiet ? ("0 = folívoro", "1 = frugívoro") : ("0", "1");
+        DrawString(font, new Vector2(area.Position.X, axisY + 14), left, HorizontalAlignment.Left, -1, 12, Palette.TextDim);
+        DrawString(font, new Vector2(area.Position.X, axisY + 14), right, HorizontalAlignment.Right, area.Size.X, 12, Palette.TextDim);
     }
 
     void DrawLegend(Vector2 pos, List<int> shown)

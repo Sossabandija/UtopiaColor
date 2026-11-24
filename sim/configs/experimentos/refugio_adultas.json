@@ -1,0 +1,32 @@
+// ¿Sirven los mecanismos si las plantas adultas tienen refugio?
+// En el original una planta baja a 0.5 al soltar semilla, justo al centro de la ventana comestible (0.29-0.71),
+// así que ninguna etapa de su vida está a salvo. Aquí "adultas" la deja en 0.75: solo los juveniles son comestibles.
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/refugio_adultas.json
+//
+// Resultado (2026-11-24, semillas 1-16, 100 días, ~12 min): la mejor fue adultas+saciedad+pareja,
+// con 4/16 coexistiendo al día 100 y una mediana de 61 días; en el original, 0/16 y 6 días.
+{
+  "base": "../original.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    "adultas": {
+      "species": [ { "name": "planta", "plant": { "sizeLossOnSeed": 0.25 } } ]
+    },
+    "brotes": {
+      "world": { "maxPlantsPerTile": 4 },
+      "species": [
+        { "name": "planta", "plant": { "seedling": { "untilSize": 0.3, "riskPerDay": 1, "shadeRiskPerDay": 25, "terrainRiskPerDay": 3 } } }
+      ]
+    },
+    "saciedad": {
+      "species": [ { "name": "carnivoro", "digestDays": 0.5 } ]
+    },
+    "pareja": {
+      "species": [ { "name": "carnivoro", "mateRangeTiles": 18 } ]
+    }
+  }
+}

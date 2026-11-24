@@ -15,4 +15,8 @@
     <ProjectReference Include="..\UtopiaSim.Core\UtopiaSim.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="UtopiaSim.Tests" />
+  </ItemGroup>
+
 </Project>

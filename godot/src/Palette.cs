@@ -33,6 +33,8 @@ static class Palette
     public static readonly Color Grid = new(1f, 1f, 1f, 0.08f);
     public static readonly Color TextDim = new(0.70f, 0.72f, 0.76f);
     public static readonly Color Danger = new(1.00f, 0.40f, 0.35f);
+    /// <summary>Modos de dispersión: fruto, viento, abrojo (mismo orden que las esquinas del gen).</summary>
+    public static readonly Color[] Dispersal = [new(1.00f, 0.42f, 0.25f), new(0.55f, 0.85f, 1.00f), new(0.88f, 0.78f, 0.40f)];
 
     public static Color ForSpecies(int index) => SpeciesColors[index % SpeciesColors.Length];
 

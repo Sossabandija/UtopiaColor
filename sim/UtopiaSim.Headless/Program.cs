@@ -23,6 +23,12 @@ if (opts.ShowHelp)
     return 0;
 }
 
+if (opts.ComparePath != null) return Compare.Run(opts);
+
+double days = opts.Days ?? 30;
+int runs = opts.Runs ?? 1;
+var settings = opts.Settings(days, opts.StopWhenExtinct ? StopRule.AnimalsExtinct : StopRule.Never);
+
 SimConfig config;
 try
 {
@@ -38,22 +44,23 @@ ulong firstSeed = opts.Seed ?? config.Seed;
 string outDir = opts.OutDir ?? Path.Combine("runs",
     $"{Path.GetFileNameWithoutExtension(opts.ConfigPath)}-{DateTime.Now:yyyyMMdd-HHmmss}");
 Directory.CreateDirectory(outDir);
-File.Copy(opts.ConfigPath, Path.Combine(outDir, "config.json"), overwrite: true);
+// La configuración completa, con sus "extends" resueltos: basta para repetir la corrida.
+File.WriteAllText(Path.Combine(outDir, "config.json"), config.ToJson());
 
-Console.WriteLine($"Config {opts.ConfigPath} | {opts.Days} días | {opts.Runs} corrida(s) desde la semilla {firstSeed}");
+Console.WriteLine($"Config {opts.ConfigPath} | {days} días | {runs} corrida(s) desde la semilla {firstSeed}");
 Console.WriteLine($"Salida: {Path.GetFullPath(outDir)}");
 
-var results = new RunResult[opts.Runs];
+var results = new RunResult[runs];
 var consoleLock = new object();
 var total = Stopwatch.StartNew();
-bool single = opts.Runs == 1;
+bool single = runs == 1;
 
-Parallel.For(0, opts.Runs, new ParallelOptions { MaxDegreeOfParallelism = opts.Parallel }, i =>
+Parallel.For(0, runs, new ParallelOptions { MaxDegreeOfParallelism = opts.Parallel }, i =>
 {
     ulong seed = firstSeed + (ulong)i;
     string dir = single ? outDir : Path.Combine(outDir, $"seed-{seed}");
     Action<string>? progress = single ? msg => Console.WriteLine("  " + msg) : null;
-    results[i] = Runner.Run(config, seed, dir, opts, progress);
+    results[i] = Runner.Run(config, seed, dir, settings, progress);
     lock (consoleLock) Console.WriteLine(results[i].OneLine());
 });
 

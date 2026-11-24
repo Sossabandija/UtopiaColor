@@ -4,11 +4,11 @@ namespace UtopiaSim.Tests;
 
 public class SimulationTests
 {
-    static string ConfigPath(string name) => Path.Combine(AppContext.BaseDirectory, "configs", name);
+    internal static string ConfigPath(string name) => Path.Combine(AppContext.BaseDirectory, "configs", name);
 
-    static SimConfig Original() => SimConfig.Load(ConfigPath("original.json"));
+    internal static SimConfig Original() => SimConfig.Load(ConfigPath("original.json"));
 
-    static string Fingerprint(Simulation sim)
+    internal static string Fingerprint(Simulation sim)
     {
         var sb = new StringBuilder();
         sb.Append(sim.Tick).Append('|');
@@ -21,6 +21,9 @@ public class SimulationTests
     [Theory]
     [InlineData("original.json")]
     [InlineData("etapa.json")]
+    [InlineData("etapa_refugio.json")]
+    [InlineData("dispersion.json")]
+    [InlineData("ecosistema.json")]
     public void ShippedConfigsLoad(string file)
     {
         var cfg = SimConfig.Load(ConfigPath(file));

@@ -118,10 +118,42 @@ public sealed class WorldMap
         return new Vec2(wx * TileSize, wy * TileSize);
     }
 
-    /// <summary>Búsqueda en anillos crecientes, en el mismo orden que el original.</summary>
-    (int, int) SearchClosestWater(int x, int y)
+    /// <summary>Altura del suelo de 0 (lo más bajo del mapa) a 1 (lo más alto).</summary>
+    public double NormalizedHeight(double x, double y) => GroundLevel(x, y) / TileSize / cfg.ElevationFactor;
+
+    /// <summary>
+    /// Para cada vértice de la grilla, el vértice más cercano que cumple <paramref name="inside"/> (null si ninguno lo cumple).
+    /// Se calcula una vez; sirve para "¿dónde está el refugio más cercano?".
+    /// </summary>
+    public (int X, int Y)[,]? ClosestVertices(Func<int, int, bool> inside)
     {
-        if (IsDrinkable(x, y)) return (x, y);
+        bool any = false;
+        for (int x = 0; x < Size && !any; x++)
+            for (int y = 0; y < Size && !any; y++)
+                any = inside(x, y);
+        if (!any) return null;
+        var result = new (int, int)[Size, Size];
+        for (int x = 0; x < Size; x++)
+            for (int y = 0; y < Size; y++)
+                result[x, y] = SearchClosest(x, y, inside);
+        return result;
+    }
+
+    /// <summary>Punto (px) del vértice precalculado en <paramref name="table"/> más cercano a (x, y).</summary>
+    public Vec2 ClosestPoint((int X, int Y)[,] table, double x, double y)
+    {
+        int ix = (int)(Wrap(x) / TileSize + 0.5) % Size;
+        int iy = (int)(Wrap(y) / TileSize + 0.5) % Size;
+        var (vx, vy) = table[ix, iy];
+        return new Vec2(vx * TileSize, vy * TileSize);
+    }
+
+    (int, int) SearchClosestWater(int x, int y) => SearchClosest(x, y, IsDrinkable);
+
+    /// <summary>Búsqueda en anillos crecientes, en el mismo orden que el original.</summary>
+    (int, int) SearchClosest(int x, int y, Func<int, int, bool> inside)
+    {
+        if (inside(x, y)) return (x, y);
         for (int dist = 1; dist <= Size / 2; dist++)
         {
             for (int shift = -dist; shift < dist; shift++)
@@ -130,7 +162,7 @@ public sealed class WorldMap
                 foreach (var (dx, dy) in deltas)
                 {
                     int tx = MathUtil.Mod(x + dx, Size), ty = MathUtil.Mod(y + dy, Size);
-                    if (IsDrinkable(tx, ty)) return (tx, ty);
+                    if (inside(tx, ty)) return (tx, ty);
                 }
             }
         }

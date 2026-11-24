@@ -17,10 +17,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\UtopiaSim.Core\UtopiaSim.Core.csproj" />
+    <ProjectReference Include="..\UtopiaSim.Headless\UtopiaSim.Headless.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="..\configs\*.json" Link="configs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\configs\experimentos\*.json" Link="configs\experimentos\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

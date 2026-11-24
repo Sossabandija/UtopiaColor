@@ -1,0 +1,15 @@
+// El ecosistema con todo lo que ha funcionado hasta ahora (2026-11-24):
+//   - etapa.json: gen de etapa preferida (temprano / tardío).
+//   - etapa_refugio.json: las plantas adultas quedan fuera del alcance de un herbívoro de etapa 0.5;
+//     carnívoros con saciedad y pareja a distancia.
+//   - dispersion.json: semillas por fruto, viento o abrojo (gen triangular) y dieta de los herbívoros.
+//   - aquí: los herbívoros se refugian en el agua, donde los carnívoros no cazan.
+//
+// En experimentos/depredadores.json, 3 de 16 semillas coexistieron los 100 días (semillas 2, 8 y 12).
+// Para ver una en el visor: elige "ecosistema" y la semilla 8.
+{
+  "extends": "dispersion.json",
+  "species": [
+    { "name": "herbivoro", "refuge": { "maxHeight": 0.3 } }
+  ]
+}

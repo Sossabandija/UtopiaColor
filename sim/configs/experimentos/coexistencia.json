@@ -1,0 +1,47 @@
+// ¿Qué mecanismo evita las extinciones? Se prueban todas las combinaciones (2^4 = 16 variantes),
+// cada una con las mismas semillas, y se cuenta en cuántas corridas coexisten las tres especies.
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/coexistencia.json
+//
+// Cada mecanismo es un parche sobre la configuración base: objetos se mezclan campo por campo,
+// especies y genes se buscan por "name", y el resto se reemplaza.
+//
+// Resultado (2026-11-24, semillas 1-16, 100 días): 0/256 corridas coexistieron. Todas las variantes duraron
+// menos que el original (mediana de 6.2 días hasta la primera extinción). Ver refugio_adultas.json.
+{
+  "base": "../original.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    // Brotes frágiles: en vez de morir solo si caen en una casilla llena (tope 2), los brotes
+    // (tamaño < 0.3, aún muy chicos para que los coman) mueren por sombra de sus vecinas y por mal terreno.
+    // Calibrado para que con plantas solas el mundo sostenga casi lo mismo que el original (~2.300 contra ~2.600);
+    // así cambia quién muere y cuándo, no cuánta comida hay. El 91% de las plantas muere como brote.
+    "brotes": {
+      "world": { "maxPlantsPerTile": 4 },
+      "species": [
+        { "name": "planta", "plant": { "seedling": { "untilSize": 0.3, "riskPerDay": 1, "shadeRiskPerDay": 25, "terrainRiskPerDay": 3 } } }
+      ]
+    },
+
+    // Saciedad: después de comer, un carnívoro no vuelve a cazar por digestDays × calorías
+    // (un herbívoro mediano da ~0.4 calorías: ~0.2 días sin cazar). Contra la explosión de carnívoros.
+    "saciedad": {
+      "species": [ { "name": "carnivoro", "digestDays": 0.5 } ]
+    },
+
+    // Pareja a distancia: los carnívoros encuentran pareja hasta 18 casillas (la visión normal es 8.6).
+    // Contra la extinción de carnívoros por ser muy pocos para encontrarse.
+    "pareja": {
+      "species": [ { "name": "carnivoro", "mateRangeTiles": 18 } ]
+    },
+
+    // Inicio con plantas establecidas: 1.000 plantas en vez de 77. No es un mecanismo del ecosistema
+    // sino del arranque: separa "sobrevive los primeros días" de "coexiste a largo plazo".
+    "inicio": {
+      "species": [ { "name": "planta", "initialCount": 1000 } ]
+    }
+  }
+}

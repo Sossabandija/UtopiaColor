@@ -10,7 +10,7 @@ namespace UtopiaViewer;
 ///
 /// Opciones de línea de comandos (después de "--"), útiles para pruebas y capturas:
 ///   --config &lt;archivo.json&gt;   --seed &lt;n&gt;   --advance-days &lt;d&gt;   --select &lt;especie&gt;
-///   --gene &lt;nombre&gt;   --speed &lt;0-5&gt;   --zoom &lt;z&gt; (y sigue al seleccionado)
+///   --gene &lt;nombre&gt;   --speed &lt;0-5&gt;   --zoom &lt;z&gt; (y sigue al seleccionado)   --chart &lt;n&gt;
 ///   --screenshot &lt;ruta.png&gt; (guarda una captura y cierra)
 /// </summary>
 public partial class Main : Node
@@ -25,12 +25,15 @@ public partial class Main : Node
 
     const string HelpText =
         "Arrastrar: mover · Rueda: zoom · Clic: ver un ser · F: seguirlo · Esc: soltarlo\n" +
-        "Espacio: pausa · Flechas arriba/abajo: velocidad · R: encuadrar · N: noche · G: otro gen";
+        "Espacio: pausa · Flechas arriba/abajo: velocidad · R: encuadrar · N: noche · C: otro gráfico · G: otro gen";
 
     Simulation? sim;
     readonly PopulationHistory history = new();
+    readonly MetricsHistory metricsHistory = new();
+    readonly List<(string Label, Action Refresh)> chartDefs = [];
     WorldView world = null!;
-    PopulationChart chart = null!;
+    TimeSeriesChart chart = null!;
+    OptionButton chartPicker = null!;
     GeneView geneView = null!;
     InspectorView inspector = null!;
     PanelContainer inspectorPanel = null!;
@@ -60,6 +63,7 @@ public partial class Main : Node
     string? argGene;
     string? argScreenshot;
     float argZoom;
+    int argChart = -1;
     int screenshotCountdown = -1;
 
     public override void _Ready()
@@ -95,6 +99,11 @@ public partial class Main : Node
                 genePicker.Select(g);
                 OnGeneSelected(g);
             }
+        }
+        if (argChart >= 0 && argChart < chartPicker.ItemCount)
+        {
+            chartPicker.Select(argChart);
+            RefreshChart();
         }
         if (argScreenshot != null) screenshotCountdown = 90; // ~1,5 s: alcanza a medir ticks/s
     }
@@ -149,6 +158,10 @@ public partial class Main : Node
             case Key.N:
                 world.NightTint = !world.NightTint;
                 break;
+            case Key.C when chartPicker.ItemCount > 0:
+                chartPicker.Select((chartPicker.Selected + 1) % chartPicker.ItemCount);
+                RefreshChart();
+                break;
             case Key.G when genePicker.ItemCount > 0:
                 int next = (genePicker.Selected + 1) % genePicker.ItemCount;
                 genePicker.Select(next);
@@ -182,9 +195,10 @@ public partial class Main : Node
         }
 
         history.Reset(sim);
+        metricsHistory.Reset(sim);
         pendingTicks = 0;
         world.SetSimulation(sim);
-        chart.SetData(sim, history);
+        BuildChartList(sim);
         geneView.SetSimulation(sim);
         genePicker.Clear();
         foreach (var g in sim.Genes) genePicker.AddItem($"{g.Name} ({ShapeName(g)})");
@@ -200,6 +214,7 @@ public partial class Main : Node
     {
         sim!.Step();
         history.Observe(sim);
+        metricsHistory.Observe(sim);
         tpsTicks++;
     }
 
@@ -305,19 +320,25 @@ public partial class Main : Node
         statusLabel = MakeLabel("", 13, Palette.TextDim);
         column.AddChild(statusLabel);
 
-        var popHeader = new HBoxContainer();
-        column.AddChild(popHeader);
-        var popTitle = MakeLabel("Población", 16, Colors.White);
-        popTitle.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        popHeader.AddChild(popTitle);
+        var chartHeader = new HBoxContainer();
+        column.AddChild(chartHeader);
+        chartPicker = new OptionButton
+        {
+            FocusMode = Control.FocusModeEnum.None,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            ClipText = true,
+            TooltipText = "Qué gráfico mostrar (tecla C para pasar al siguiente)",
+        };
+        chartPicker.ItemSelected += _ => RefreshChart();
+        chartHeader.AddChild(chartPicker);
         var logToggle = new CheckBox { Text = "escala log", ButtonPressed = true, FocusMode = Control.FocusModeEnum.None };
         logToggle.Toggled += on =>
         {
             chart.LogScale = on;
-            chart.QueueRedraw();
+            RefreshChart();
         };
-        popHeader.AddChild(logToggle);
-        chart = new PopulationChart { CustomMinimumSize = new Vector2(0, 170) };
+        chartHeader.AddChild(logToggle);
+        chart = new TimeSeriesChart { CustomMinimumSize = new Vector2(0, 170) };
         column.AddChild(chart);
 
         var geneHeader = new HBoxContainer();
@@ -378,11 +399,167 @@ public partial class Main : Node
         statusLabel.Text =
             $"Día {(int)day + 1}, {(int)hours:00}:{(int)(hours % 1 * 60):00}  ·  {SpeedLabels[speedIndex]}  ·  " +
             $"{measuredTps / 1000:0.0}k ticks/s  ·  {Engine.GetFramesPerSecond():0} fps  ·  {sim.Creatures.Count} seres";
-        chart.QueueRedraw();
+        RefreshChart();
         geneView.Selected = world.Selected;
         geneView.QueueRedraw();
         followButton.SetPressedNoSignal(world.Follow);
         if (inspectorPanel.Visible) inspector.SetCreature(sim, world.Selected);
+    }
+
+    // ------------------------------------------------------------------ gráficos
+
+    static readonly Color BirthColor = new(0.92f, 0.92f, 0.92f);
+    static readonly Dictionary<DeathCause, (string Name, Color Color)> DeathStyle = new()
+    {
+        [DeathCause.Starved] = ("de hambre", new Color(0.85f, 0.6f, 0.3f)),
+        [DeathCause.Dehydrated] = ("de sed", new Color(0.35f, 0.6f, 1f)),
+        [DeathCause.Eaten] = ("comidos", new Color(1f, 0.3f, 0.3f)),
+        [DeathCause.Crowded] = ("sin espacio", new Color(0.55f, 0.55f, 0.6f)),
+        [DeathCause.Seedling] = ("como brote", new Color(0.55f, 0.85f, 0.35f)),
+    };
+
+    /// <summary>Arma la lista de gráficos disponibles para esta simulación (depende de sus especies y genes).</summary>
+    void BuildChartList(Simulation s)
+    {
+        int previous = chartPicker.Selected;
+        chartDefs.Clear();
+
+        chartDefs.Add(("Población", () => chart.SetData(history.Days, s.Species.Select(sp =>
+            new ChartSeries(PopulationLegend(s, sp), Palette.ForSpecies(sp.Index), history.Counts[sp.Index])).ToList())));
+
+        foreach (var sp in s.Species.Where(sp => s.PreySpeciesOf(sp.Index).Count > 0))
+        {
+            string n = sp.Name;
+            chartDefs.Add(($"Comida a la vista: {n}", () => chart.SetData(metricsHistory.Days,
+            [
+                Curve("ve", Palette.TextDim, metricsHistory.Get($"{n}.food.visible")),
+                Curve("tamaño justo", new Color(1f, 0.85f, 0.3f), metricsHistory.Get($"{n}.food.rightStage")),
+                Curve("comestibles", new Color(0.35f, 1f, 0.45f), metricsHistory.Get($"{n}.food.edible")),
+            ])));
+        }
+
+        foreach (var sp in s.Species)
+        {
+            var target = sp;
+            chartDefs.Add(($"Nacimientos y muertes: {sp.Name}", () =>
+            {
+                var curves = new List<ChartSeries> { Curve("nacimientos", BirthColor, metricsHistory.Get($"{target.Name}.births")) };
+                foreach (var (cause, style) in DeathStyle)
+                {
+                    var values = metricsHistory.Get(MetricsHistory.DeathKey(target, cause));
+                    if (values.Any(v => v > 0)) curves.Add(Curve(style.Name, style.Color, values));
+                }
+                var failed = metricsHistory.Get($"{target.Name}.huntsFailed");
+                if (failed.Any(v => v > 0)) curves.Add(Curve("cazas fallidas", new Color(0.75f, 0.55f, 1f), failed));
+                chart.SetData(metricsHistory.Days, curves);
+            }));
+        }
+
+        var stageEaters = s.Species.Where(sp => sp.StageGeneIndex >= 0).ToList();
+        if (stageEaters.Count > 0)
+        {
+            chartDefs.Add(("Etapa preferida por especie", () =>
+            {
+                var curves = stageEaters
+                    .Select(sp => Curve(sp.Name, Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.stage")))
+                    .ToList();
+                // Referencia: desde qué etapa un herbívoro (del mismo color) alcanza a las plantas que ya soltaron semilla.
+                var plant = s.Species.FirstOrDefault(sp => sp.IsPlant && stageEaters.Any(e => s.PreySpeciesOf(e.Index).Contains(sp.Index)));
+                if (plant != null)
+                {
+                    double reach = plant.Plant.SeedAtSize - plant.Plant.SizeLossOnSeed - s.Config.Predation.HalfWidth;
+                    curves.Add(Curve("alcanza adultas", new Color(0.6f, 0.6f, 0.6f), metricsHistory.Days.Select(_ => reach).ToList()));
+                }
+                chart.SetData(metricsHistory.Days, curves, max: 1, logAllowed: false);
+            }));
+        }
+
+        var withRefuge = s.Species.Where(sp => s.HasRefuge(sp.Index)).ToList();
+        if (withRefuge.Count > 0)
+        {
+            chartDefs.Add(("Presas en su refugio (%)", () => chart.SetData(metricsHistory.Days,
+                withRefuge.Select(sp => Curve(sp.Name, Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.inRefuge"))).ToList(),
+                max: 100, logAllowed: false)));
+        }
+
+        var dietEaters = s.Species.Where(sp => sp.DietGeneIndex >= 0).ToList();
+        if (dietEaters.Count > 0)
+        {
+            chartDefs.Add(("Dieta por especie (0 folívoro, 1 frugívoro)", () => chart.SetData(metricsHistory.Days,
+                dietEaters.Select(sp => Curve(sp.Name, Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.diet"))).ToList(),
+                max: 1, logAllowed: false)));
+        }
+
+        // Genes de 3 o más esquinas (por ejemplo la dispersión): el peso de cada esquina en el tiempo.
+        foreach (var gene in s.Genes.Where(g => g.Space is PolygonSpace { Sides: >= 3 }))
+        {
+            int sides = ((PolygonSpace)gene.Space).Sides;
+            foreach (var sp in s.Species.Where(sp => sp.Mutation[gene.Index] != null))
+            {
+                var (g, target) = (gene, sp);
+                chartDefs.Add(($"Gen {g.Name}: {sp.Name}", () => chart.SetData(metricsHistory.Days,
+                    Enumerable.Range(0, sides).Select(i => Curve(
+                        g.Config.VertexNames?[i] ?? $"esquina {i + 1}",
+                        i < Palette.Dispersal.Length ? Palette.Dispersal[i] : Palette.ForSpecies(i),
+                        metricsHistory.Get(MetricsHistory.CornerKey(target, g, i)))).ToList(),
+                    max: 1, logAllowed: false)));
+            }
+        }
+
+        foreach (var sp in s.Species.Where(sp => sp.IsPlant && sp.Plant.Dispersal != null))
+        {
+            var target = sp;
+            chartDefs.Add(($"Semillas por modo: {sp.Name}", () =>
+            {
+                var curves = new List<ChartSeries>();
+                void Add(string name, Color color, DispersalCounter k)
+                {
+                    var values = metricsHistory.Get(MetricsHistory.DispersalKey(target, k));
+                    if (values.Any(v => v > 0)) curves.Add(Curve(name, color, values));
+                }
+                Add("cayeron de la madre", Palette.TextDim, DispersalCounter.SeedsParent);
+                Add("viento", Palette.Dispersal[1], DispersalCounter.SeedsWind);
+                Add("salieron de un estómago", Palette.Dispersal[0], DispersalCounter.SeedsGut);
+                Add("cayeron de un abrojo", Palette.Dispersal[2], DispersalCounter.SeedsBurr);
+                Add("destruidas en estómagos", Palette.Danger, DispersalCounter.SeedsDigested);
+                chart.SetData(metricsHistory.Days, curves);
+            }));
+        }
+
+        if (Palette.ColorGene(s) is { } colorGene)
+        {
+            var mutating = s.Species.Where(sp => sp.Mutation[colorGene.Index] != null).ToList();
+            chartDefs.Add(("Tono de color por especie", () => chart.SetData(metricsHistory.Days,
+                mutating.Select(sp => Curve(sp.Name, Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.hue"), wraps: true)).ToList(),
+                max: 1, logAllowed: false)));
+            chartDefs.Add(("Distancia de color a la comida", () => chart.SetData(metricsHistory.Days,
+                s.Species.Where(sp => s.PreySpeciesOf(sp.Index).Count > 0)
+                    .Select(sp => Curve(sp.Name, Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.food.colorDistance"))).ToList(),
+                logAllowed: false)));
+        }
+
+        chartPicker.Clear();
+        foreach (var (label, _) in chartDefs) chartPicker.AddItem(label);
+        chartPicker.Select(previous >= 0 && previous < chartDefs.Count ? previous : 0);
+        RefreshChart();
+    }
+
+    void RefreshChart()
+    {
+        int i = chartPicker.Selected;
+        if (i >= 0 && i < chartDefs.Count) chartDefs[i].Refresh();
+    }
+
+    string PopulationLegend(Simulation s, SpeciesDef sp) => history.ExtinctDay[sp.Index] is double d
+        ? $"{sp.Name}: extinta (día {d + 1:0.0})"
+        : $"{sp.Name}: {s.Population(sp.Index)}";
+
+    /// <summary>Una curva cuya leyenda muestra el último valor.</summary>
+    static ChartSeries Curve(string name, Color color, IReadOnlyList<double> values, bool wraps = false)
+    {
+        double last = values.Count > 0 ? values[^1] : double.NaN;
+        string legend = double.IsFinite(last) ? $"{name}: {last:0.##}" : name;
+        return new ChartSeries(legend, color, values, wraps);
     }
 
     void OnSelectionChanged(Creature? c)
@@ -494,6 +671,7 @@ public partial class Main : Node
                 case "--speed": speedIndex = lastRunningSpeed = Math.Clamp(int.Parse(value, CultureInfo.InvariantCulture), 0, Speeds.Length - 1); i++; break;
                 case "--screenshot": argScreenshot = value; i++; break;
                 case "--zoom": argZoom = float.Parse(value, CultureInfo.InvariantCulture); i++; break;
+                case "--chart": argChart = int.Parse(value, CultureInfo.InvariantCulture); i++; break;
             }
         }
     }

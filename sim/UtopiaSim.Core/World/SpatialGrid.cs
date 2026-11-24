@@ -73,6 +73,25 @@ internal sealed class SpatialGrid
         }
     }
 
+    /// <summary>
+    /// Celdas que tocan el cuadrado de lado 2·<paramref name="radius"/> centrado en (x, y), sobre el toro.
+    /// Con un radio menor que una celda son de 1 a 4: sirve para "¿qué toco?" sin revisar anillos completos.
+    /// </summary>
+    public void CollectOverlapping(double x, double y, double radius, List<int> output)
+    {
+        output.Clear();
+        int x0 = (int)Math.Floor((x - radius) / cellSize), x1 = (int)Math.Floor((x + radius) / cellSize);
+        int y0 = (int)Math.Floor((y - radius) / cellSize), y1 = (int)Math.Floor((y + radius) / cellSize);
+        for (int i = x0; i <= x1; i++)
+        {
+            for (int j = y0; j <= y1; j++)
+            {
+                int index = MathUtil.Mod(i, n) * n + MathUtil.Mod(j, n);
+                if (!output.Contains(index)) output.Add(index);
+            }
+        }
+    }
+
     int CellCoord(double v)
     {
         int i = (int)(v / cellSize);

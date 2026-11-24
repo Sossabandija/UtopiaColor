@@ -43,6 +43,7 @@ public partial class WorldView : Node2D
     Node2D creatureRoot = null!;
     SelectionOverlay overlay = null!;
     SpeciesLayer[] layers = [];
+    SpeciesLayer? markers; // frutos y abrojos sobre las plantas
     bool dragging;
     float dragDistance;
 
@@ -89,10 +90,16 @@ public partial class WorldView : Node2D
         BuildTerrain();
 
         foreach (var l in layers) l.Free();
-        // Plantas primero para que queden debajo de los animales.
+        markers?.Free();
+        // Plantas primero para que queden debajo de los animales; entre medio, sus frutos y abrojos.
         float width = (float)s.Map.Width;
         layers = new SpeciesLayer[s.Species.Count];
-        foreach (var sp in s.Species.OrderBy(sp => sp.IsPlant ? 0 : 1))
+        foreach (var sp in s.Species.Where(sp => sp.IsPlant))
+            layers[sp.Index] = new SpeciesLayer(creatureRoot, sp, Palette.ForSpecies(sp.Index), CopyOffsets(width));
+        markers = s.Species.Any(sp => sp.IsPlant && sp.Plant.Dispersal != null)
+            ? new SpeciesLayer(creatureRoot, -1, Meshes.Circle, withBorder: false, default, CopyOffsets(width))
+            : null;
+        foreach (var sp in s.Species.Where(sp => !sp.IsPlant))
             layers[sp.Index] = new SpeciesLayer(creatureRoot, sp, Palette.ForSpecies(sp.Index), CopyOffsets(width));
 
         FitView();
@@ -127,6 +134,7 @@ public partial class WorldView : Node2D
         float minPlant = MinPlantScreenPx / zoom, minSeed = MinSeedScreenPx / zoom, minAnimal = MinAnimalScreenPx / zoom;
 
         foreach (var l in layers) l.Begin(sim.Population(l.Species));
+        markers?.Begin(2 * sim.Species.Where(sp => sp.IsPlant).Sum(sp => sim.Population(sp.Index)));
         foreach (var c in sim.Creatures)
         {
             var pos = new Vector2((float)c.X, (float)c.Y);
@@ -138,6 +146,9 @@ public partial class WorldView : Node2D
                     : Math.Max(minSeed, 5f);
                 if (!c.Landed) color.A = 0.6f;
                 layers[c.Species].Add(pos, 0, r, color);
+                // Frutos y abrojos: un punto a cada lado, más grande mientras más tenga.
+                if (c.Fruits > 0) markers?.Add(pos + new Vector2(-0.6f, -0.6f) * r, 0, Math.Max(minSeed * 2, 5f + 3f * c.Fruits), Palette.Dispersal[0]);
+                if (c.Burrs > 0) markers?.Add(pos + new Vector2(0.6f, -0.6f) * r, 0, Math.Max(minSeed * 2, 5f + 3f * c.Burrs), Palette.Dispersal[2]);
             }
             else
             {
@@ -147,6 +158,7 @@ public partial class WorldView : Node2D
             }
         }
         foreach (var l in layers) l.End();
+        markers?.End();
 
         if (Selected is { Dead: true }) Follow = false;
         if (Follow && Selected != null)
@@ -327,11 +339,16 @@ public partial class WorldView : Node2D
         int count;
 
         public SpeciesLayer(Node parent, SpeciesDef sp, Color speciesColor, IEnumerable<Vector2> copyOffsets)
+            : this(parent, sp.Index, sp.IsPlant ? Meshes.Circle : Meshes.Arrow, withBorder: !sp.IsPlant, speciesColor, copyOffsets)
         {
-            Species = sp.Index;
-            borderColor = speciesColor;
-            var mesh = sp.IsPlant ? Meshes.Circle : Meshes.Arrow;
-            if (!sp.IsPlant) border = NewMultiMesh(mesh);
+        }
+
+        /// <summary><paramref name="species"/> = -1 para una capa que no es de una especie (frutos y abrojos).</summary>
+        public SpeciesLayer(Node parent, int species, Mesh mesh, bool withBorder, Color borderColor, IEnumerable<Vector2> copyOffsets)
+        {
+            Species = species;
+            this.borderColor = borderColor;
+            if (withBorder) border = NewMultiMesh(mesh);
             fill = NewMultiMesh(mesh);
 
             var offsets = copyOffsets.ToList();

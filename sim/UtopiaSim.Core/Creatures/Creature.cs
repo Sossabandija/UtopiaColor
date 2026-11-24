@@ -35,6 +35,14 @@ public sealed class Creature
     public double PlantSize { get; internal set; }
     /// <summary>False mientras la semilla vuela.</summary>
     public bool Landed { get; internal set; }
+    /// <summary>Cómo llegó esta semilla a donde está (cayó de su madre, viento, estómago o abrojo).</summary>
+    public SeedOrigin Origin { get; internal set; }
+    /// <summary>Frutos colgando (endozoocoria).</summary>
+    public int Fruits { get; internal set; }
+    /// <summary>Abrojos esperando a que pase un animal (epizoocoria).</summary>
+    public int Burrs { get; internal set; }
+    /// <summary>Velocidad de vuelo de la semilla (viento), en veces la normal. También al rebotar.</summary>
+    internal double SeedSpeedFactor = 1;
 
     // --- Animal ---
     /// <summary>Necesidades (ver <see cref="Need"/>). Solo lectura para los visores.</summary>
@@ -47,6 +55,12 @@ public sealed class Creature
     public Vec2 TargetPoint { get; internal set; }
     public Creature? Predator { get; internal set; }
     public Creature? RecentChild { get; internal set; }
+    /// <summary>Semillas que lleva en el estómago (pasarán intactas).</summary>
+    public int SeedsInGut => Gut?.Sum(p => p.Seeds) ?? 0;
+    /// <summary>Abrojos pegados.</summary>
+    public int BurrsCarried => CarriedBurrs?.Count ?? 0;
+    internal List<SeedPacket>? Gut;
+    internal List<SeedPacket>? CarriedBurrs;
     internal int TickBucket;
     internal int WanderAction = -1;
 
@@ -62,6 +76,12 @@ public sealed class Creature
     public int Meals { get; internal set; }
     public int Drinks { get; internal set; }
     public long LastMealTick { get; internal set; } = long.MinValue;
+    /// <summary>Con saciedad (digestDays): hasta este tick no busca comida.</summary>
+    public long DigestUntil { get; internal set; } = long.MinValue;
+    /// <summary>Con territorialidad: después de una caza fallida, hasta este tick no busca comida.</summary>
+    public long HuntCooldownUntil { get; internal set; } = long.MinValue;
+    /// <summary>Con territorialidad de cría: hay demasiados rivales cerca para buscar pareja (se revisa cada tickBucketCount ticks).</summary>
+    public bool TooCrowdedToBreed { get; internal set; }
     public long LastSeedTick { get; internal set; } = long.MinValue;
 
     // Casilla donde se cuenta (solo plantas, para el límite por casilla).
@@ -69,4 +89,26 @@ public sealed class Creature
 
     public override string ToString() =>
         $"#{Id} {Def.Name}{(Name.Length > 0 ? " " + Name : "")} ({X:0},{Y:0}){(Dead ? " muerto" : "")}";
+}
+
+/// <summary>Cómo llegó una semilla a donde está.</summary>
+public enum SeedOrigin
+{
+    /// <summary>Cayó cerca de su madre (semilla normal, o un fruto/abrojo que nadie se llevó).</summary>
+    Parent,
+    Wind,
+    /// <summary>Pasó por el estómago de un animal que se comió el fruto.</summary>
+    Gut,
+    /// <summary>La soltó un animal que llevaba pegado un abrojo.</summary>
+    Burr,
+}
+
+/// <summary>Semillas que un animal lleva en el estómago o en un abrojo pegado.</summary>
+internal sealed class SeedPacket(Creature parent, int seeds, long nextTick)
+{
+    /// <summary>La planta madre (puede haber muerto; sus genes siguen sirviendo).</summary>
+    public Creature Parent { get; } = parent;
+    public int Seeds { get; set; } = seeds;
+    /// <summary>Estómago: cuándo salen todas. Abrojo: cuándo cae la próxima.</summary>
+    public long NextTick { get; set; } = nextTick;
 }

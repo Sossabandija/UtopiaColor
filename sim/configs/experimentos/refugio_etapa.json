@@ -1,0 +1,37 @@
+// Refugio parcial: las plantas adultas quedan fuera del alcance de un herbívoro "normal" (etapa 0.5),
+// pero el gen de etapa muta, así que pueden aparecer herbívoros tardíos que sí se las comen.
+// ¿Aguanta el refugio, o la evolución lo rompe? Comparar con refugio_adultas.json (refugio fijo, sin gen de etapa).
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/refugio_etapa.json
+//
+// Ventana de un herbívoro con el mismo color que la planta: etapa ± 0.21. Con "adultas", una planta baja
+// a 0.75 al soltar semilla, así que un herbívoro alcanza a las adultas desde etapa ~0.54.
+//
+// Resultado (2026-11-24, semillas 1-16, 100 días, ~5 min): 0/16 en todas las variantes. La mejor fue
+// adultas+saciedad+pareja+lenta, con una mediana de 12.8 días (refugio fijo: 61 días).
+//   - Sin "lenta", los herbívoros se dispersan hacia ambos lados: 18.6% de las plantas comidas son adultas y 28% brotes.
+//   - Con "lenta" casi no tocan a las adultas (~3%) y las plantas nunca se extinguen primero. Pero evolucionan hacia
+//     lo temprano (comen brotes, que abundan), llegan a ~700, y el problema pasa a ser carnívoros contra herbívoros.
+{
+  "base": "../etapa.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    "adultas": {
+      "species": [ { "name": "planta", "plant": { "sizeLossOnSeed": 0.25 } } ]
+    },
+    "saciedad": {
+      "species": [ { "name": "carnivoro", "digestDays": 0.5 } ]
+    },
+    "pareja": {
+      "species": [ { "name": "carnivoro", "mateRangeTiles": 18 } ]
+    },
+    // El gen de etapa de los herbívoros muta 3 veces más lento (maxStep 0.15 → 0.05): la población se dispersa
+    // menos, así que menos individuos llegan a las adultas.
+    "lenta": {
+      "species": [ { "name": "herbivoro", "mutation": { "etapa": { "maxStep": 0.05 } } } ]
+    }
+  }
+}

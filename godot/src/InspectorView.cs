@@ -20,7 +20,10 @@ public partial class InspectorView : Control
         creature = c;
         if (s != null && c != null)
         {
-            int lines = c.IsPlant ? 3 + s.Genes.Count : 6 + s.Genes.Count + (c.Def.StageGeneIndex >= 0 ? 1 : 0);
+            bool seedsWorld = s.Species.Any(sp => sp.IsPlant && sp.Plant.Dispersal != null);
+            int lines = c.IsPlant
+                ? 3 + ShownGenes(s, c).Count() + (c.Def.Plant.Dispersal != null ? 1 : 0)
+                : 6 + ShownGenes(s, c).Count() + (c.Def.StageGeneIndex >= 0 ? 1 : 0) + (seedsWorld || c.Def.DietGeneIndex >= 0 ? 1 : 0);
             float height = 34 + lines * LineHeight + (c.IsPlant ? 0 : 6 + Need.Count * BarStep);
             CustomMinimumSize = new Vector2(400, height);
         }
@@ -62,27 +65,45 @@ public partial class InspectorView : Control
 
         if (c.IsPlant)
         {
-            Line(c.Landed ? $"Tamaño {c.PlantSize:0.00} (suelta semilla al llegar a 1)" : "Semilla en vuelo");
+            if (!c.Landed) Line("Semilla en vuelo");
+            else if (!c.Dead && Simulation.IsSeedling(c))
+                Line($"Brote, tamaño {c.PlantSize:0.00}: riesgo de morir {sim.SeedlingRiskPerDay(c):0.0}/día hasta {c.Def.Plant.Seedling!.UntilSize:0.0#}");
+            else Line($"Tamaño {c.PlantSize:0.00} (suelta semilla al llegar a 1)");
+            if (c.Def.Plant.Dispersal != null)
+            {
+                string origin = c.ParentA == null ? "" : $"Llegó {OriginText(c.Origin)} · ";
+                Line($"{origin}frutos {c.Fruits} · abrojos {c.Burrs}");
+            }
         }
         else
         {
             Line($"Peso {c.Needs[Need.Food]:0.00} · comidas {c.Meals} · tragos {c.Drinks}");
-            if (!c.Dead) Line($"Ahora: {Doing(c)}", Colors.White);
+            string status = sim.IsDigesting(c) ? $" · saciado {(c.DigestUntil - sim.Tick) / ticksPerDay * 24:0.0} h más"
+                : sim.IsHuntCooldown(c) ? $" · cazó sin éxito, espera {(c.HuntCooldownUntil - sim.Tick) / ticksPerDay * 24:0.0} h"
+                : "";
+            if (sim.InRefuge(c)) status += " · en su refugio";
+            if (c.TooCrowdedToBreed) status += " · demasiados rivales para criar";
+            if (!c.Dead) Line($"Ahora: {Doing(c)}{status}", Colors.White);
             if (c.Def.StageGeneIndex >= 0) Line($"Prefiere presas en etapa {sim.PreferredStage(c):0.00} (0 = temprano, 1 = tardío)");
+            bool seedsWorld = sim.Species.Any(sp => sp.IsPlant && sp.Plant.Dispersal != null);
+            string carried = $"{c.SeedsInGut} semillas en el estómago · {c.BurrsCarried} abrojos";
+            if (c.Def.DietGeneIndex >= 0) Line($"Dieta {sim.Diet(c):0.00} · {carried}");
+            else if (seedsWorld) Line($"Lleva {carried}");
         }
 
-        foreach (var g in sim.Genes)
+        foreach (var g in ShownGenes(sim, c))
         {
             var v = c.Genes[g.Index];
             string value = g.Space switch
             {
                 DiskSpace => $"tono {DiskSpace.Hue(v):0.00} · saturación {DiskSpace.Saturation(v):0.00}",
                 PolygonSpace { Sides: 2 } line => $"{line.LinePosition(v):0.00}",
-                PolygonSpace polygon => string.Join(" / ", polygon.VertexWeights(v).Select(w => w.ToString("0.00"))),
+                PolygonSpace polygon => string.Join(" / ", polygon.VertexWeights(v).Select((w, i) =>
+                    g.Config.VertexNames is { } names ? $"{names[i]} {w:0.00}" : w.ToString("0.00"))),
                 _ => "",
             };
             bool mutates = c.Def.Mutation[g.Index] != null;
-            Line($"Gen {g.Name}: {value}{(mutates ? "" : " (no muta en esta especie)")}");
+            Line($"Gen {g.Name}: {value}{(mutates ? "" : " (no muta)")}");
         }
 
         if (c.IsPlant) return;
@@ -110,7 +131,21 @@ public partial class InspectorView : Control
         DeathCause.Starved => "de hambre",
         DeathCause.Dehydrated => "de sed",
         DeathCause.Crowded => "sin espacio (su casilla estaba llena)",
+        DeathCause.Seedling => "como brote, antes de establecerse",
         _ => "?",
+    };
+
+    /// <summary>Genes que importan para este ser: los que muta su especie o los que usa (color, etapa, dieta, dispersión).</summary>
+    static IEnumerable<GeneDef> ShownGenes(Simulation sim, Creature c) => sim.Genes.Where(g =>
+        c.Def.Mutation[g.Index] != null || g == sim.MatchGene || g.Index == c.Def.StageGeneIndex ||
+        g.Index == c.Def.DietGeneIndex || g.Index == c.Def.DispersalGeneIndex);
+
+    static string OriginText(SeedOrigin origin) => origin switch
+    {
+        SeedOrigin.Wind => "con el viento",
+        SeedOrigin.Gut => "en el estómago de un animal",
+        SeedOrigin.Burr => "pegada a un animal (abrojo)",
+        _ => "cayendo de su madre",
     };
 
     static string Doing(Creature c)
@@ -128,7 +163,7 @@ public partial class InspectorView : Control
             Need.Water => "va a beber",
             Need.Mate => hasTarget ? $"busca pareja: {target}" : "busca pareja (deambula)",
             Need.Rest => "duerme",
-            Need.Safety => hasTarget ? $"huye de {target}" : "huye",
+            Need.Safety => c.TargetKind == TargetKind.Refuge ? "huye a su refugio" : hasTarget ? $"huye de {target}" : "huye",
             Need.Care => hasTarget ? $"cuida a su cría {target}" : "cuida a su cría",
             _ => "recién nacido",
         };

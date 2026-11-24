@@ -20,6 +20,8 @@ public sealed class SpeciesDef
                 : Vec2.Zero;
             initial[g.Index] = g.Space.Project(start);
             if (config.PreferredStageGene == g.Name) StageGeneIndex = g.Index;
+            if (config.DietGene == g.Name) DietGeneIndex = g.Index;
+            if (Plant.Dispersal?.Gene == g.Name) DispersalGeneIndex = g.Index;
         }
         Mutation = mutation;
         InitialGenes = initial;
@@ -38,4 +40,10 @@ public sealed class SpeciesDef
 
     /// <summary>Índice del gen de etapa preferida, o -1 si la especie no tiene.</summary>
     public int StageGeneIndex { get; } = -1;
+
+    /// <summary>Índice del gen de dieta (0 folívoro, 1 frugívoro), o -1 si la especie no tiene.</summary>
+    public int DietGeneIndex { get; } = -1;
+
+    /// <summary>Solo plantas: índice del gen triangular de dispersión, o -1 si no tiene.</summary>
+    public int DispersalGeneIndex { get; } = -1;
 }

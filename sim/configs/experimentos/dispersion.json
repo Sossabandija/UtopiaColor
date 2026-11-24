@@ -1,0 +1,57 @@
+// ¿Qué aporta cada modo de dispersión? Base: el refugio parcial de las adultas (etapa_refugio.json).
+// Cada mecanismo agrega el gen triangular "dispersion" y su modo; "fruto" agrega además el gen de dieta
+// de los herbívoros (parten folívoros puros, dieta 0, y la dieta muta). Una planta en un modo apagado suelta
+// una semilla normal, así que "viento" solo = un tercio de las semillas (al inicio) vuela lejos.
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/dispersion.json
+//
+// Las partes comunes (el gen, su mutación) se repiten en cada mecanismo: al combinarlos, el parche es el mismo.
+//
+// Resultado (2026-11-24, semillas 1-16, 100 días, ~12 min): 0/16 en todas las variantes; las plantas nunca se
+// extinguen primero y el colapso sigue siendo carnívoros contra herbívoros. Días hasta la 1ª extinción (promedio):
+// fruto 17.3 contra 12.8 sin él, abrojo 16.4 contra 13.7, viento 14.6 contra 15.4 (diferencias chicas para 16 semillas).
+// En las corridas largas (40-57 días) la dieta de los herbívoros sube sola de 0 a 0.6-0.7, mientras las plantas se
+// alejan del fruto (0.33 → 0.20) porque al principio la mayoría de sus semillas se destruye en estómagos.
+{
+  "base": "../etapa_refugio.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    "viento": {
+      "genes": [ { "name": "dispersion", "shape": "polygon", "sides": 3, "boundary": "clamp", "vertexNames": ["fruto", "viento", "abrojo"] } ],
+      "species": [
+        { "name": "planta",
+          "initialGenes": { "dispersion": [0, 0] },
+          "mutation": { "dispersion": { "maxStep": 0.15, "exponent": 2.6 } },
+          "plant": { "dispersal": { "gene": "dispersion", "exponent": 2, "wind": { "maxRangeFactor": 4 } } } }
+      ]
+    },
+    "fruto": {
+      "genes": [
+        { "name": "dispersion", "shape": "polygon", "sides": 3, "boundary": "clamp", "vertexNames": ["fruto", "viento", "abrojo"] },
+        { "name": "dieta", "shape": "polygon", "sides": 2, "boundary": "clamp" }
+      ],
+      "species": [
+        { "name": "planta",
+          "initialGenes": { "dispersion": [0, 0] },
+          "mutation": { "dispersion": { "maxStep": 0.15, "exponent": 2.6 } },
+          "plant": { "dispersal": { "gene": "dispersion", "exponent": 2,
+            "fruit": { "maxSeeds": 6, "calories": 0.5, "maxColorDistance": 0.6, "transitDays": 0.1, "maxOnPlant": 3 } } } },
+        { "name": "herbivoro", "dietGene": "dieta", "initialGenes": { "dieta": [-1] },
+          "mutation": { "dieta": { "maxStep": 0.15, "exponent": 2.6 } } }
+      ]
+    },
+    "abrojo": {
+      "genes": [ { "name": "dispersion", "shape": "polygon", "sides": 3, "boundary": "clamp", "vertexNames": ["fruto", "viento", "abrojo"] } ],
+      "species": [
+        { "name": "planta",
+          "initialGenes": { "dispersion": [0, 0] },
+          "mutation": { "dispersion": { "maxStep": 0.15, "exponent": 2.6 } },
+          "plant": { "dispersal": { "gene": "dispersion", "exponent": 2,
+            "burr": { "maxSeeds": 4, "dropEveryDays": 0.05, "maxOnPlant": 2 } } } }
+      ]
+    }
+  }
+}

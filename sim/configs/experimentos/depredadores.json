@@ -1,0 +1,33 @@
+// ¿Qué frena el vaivén entre carnívoros y herbívoros? Base: dispersion.json (refugio parcial de las plantas
+// adultas + fruto, viento y abrojo + dieta de los herbívoros).
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/depredadores.json
+//
+// En --compare, un animal con menos de 2 individuos cuenta como extinto: ya no puede reproducirse
+// (y como no mueren de viejos, uno solo podría durar indefinidamente).
+//
+// Resultado (2026-11-24, semillas 1-16, 100 días, ~12 min):
+//   base 0/16 (mediana 10.8 días) · refugio 3/16 · territorio 0/16 (los carnívoros igual se comen a todos los herbívoros)
+//   · refugio+territorio 4/16. Días hasta la 1ª extinción en promedio: con refugio 33.3, sin él 11.9.
+// Lo que sigue fallando: en ~la mitad de las corridas con refugio los carnívoros caen bajo 2 en los primeros 1-5 días.
+// En las corridas de 100 días hay coevolución: si los herbívoros se vuelven frugívoros (dieta ~0.9) las plantas
+// mantienen el fruto; si siguen folívoros (dieta ~0.2), las plantas lo abandonan (0.04-0.14) por abrojo o viento.
+{
+  "base": "../dispersion.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    // Refugio: los herbívoros en el agua (suelo bajo 0.3 de la altura máxima) no pueden ser cazados,
+    // y cuando huyen corren al agua más cercana.
+    "refugio": {
+      "species": [ { "name": "herbivoro", "refuge": { "maxHeight": 0.3 } } ]
+    },
+    // Territorio de cría: un carnívoro con más de 3 rivales a menos de 4 casillas no cría.
+    // Con pocos carnívoros no cambia nada; con muchos juntos dejan de nacer crías.
+    "territorio": {
+      "species": [ { "name": "carnivoro", "territory": { "radiusTiles": 4, "maxRivalsToBreed": 3 } } ]
+    }
+  }
+}

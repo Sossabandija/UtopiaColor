@@ -37,11 +37,28 @@ sealed record RunResult(
     }
 }
 
+/// <summary>Cuándo cortar una corrida antes de tiempo.</summary>
+enum StopRule
+{
+    /// <summary>Cuando no queda ningún animal (o no queda nadie).</summary>
+    AnimalsExtinct,
+    /// <summary>En la primera extinción de cualquier especie: basta para saber si coexisten.</summary>
+    FirstExtinction,
+    Never,
+}
+
+/// <summary>Qué simular y qué anotar en una corrida.</summary>
+/// <param name="FunctionalExtinction">
+/// Una especie animal con menos de 2 individuos cuenta como extinta: ya no puede reproducirse
+/// (y como los animales no mueren de viejos, uno solo podría durar indefinidamente).
+/// </param>
+sealed record RunSettings(double Days, int SampleEvery, int MetricsEvery, bool WriteGenes, StopRule Stop, bool FunctionalExtinction = false);
+
 static class Runner
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    public static RunResult Run(SimConfig config, ulong seed, string dir, CliOptions o, Action<string>? progress)
+    public static RunResult Run(SimConfig config, ulong seed, string dir, RunSettings o, Action<string>? progress)
     {
         Directory.CreateDirectory(dir);
         var sim = new Simulation(config, seed);
@@ -56,7 +73,7 @@ static class Runner
         for (int s = 0; s < speciesCount; s++)
         {
             min[s] = max[s] = sim.Population(s);
-            if (sim.Population(s) == 0) extinct[s] = 0;
+            if (IsExtinct(sim, s, o)) extinct[s] = 0;
         }
         bool hasAnimals = sim.Species.Any(s => !s.IsPlant);
 
@@ -73,6 +90,10 @@ static class Runner
             WriteGenes(genes, sim);
         }
 
+        using var metrics = new SimMetrics(sim);
+        using var metricsCsv = new StreamWriter(Path.Combine(dir, "metrics.csv"));
+        metricsCsv.WriteLine(MetricsCsv.Header(sim));
+
         var sw = Stopwatch.StartNew();
         bool stoppedEarly = false;
         long progressEvery = ticksPerDay * 5L;
@@ -85,10 +106,11 @@ static class Runner
                 int p = sim.Population(s);
                 if (p < min[s]) min[s] = p;
                 if (p > max[s]) max[s] = p;
-                if (p == 0 && extinct[s] == null) extinct[s] = sim.Day;
+                if (extinct[s] == null && IsExtinct(sim, s, o)) extinct[s] = sim.Day;
             }
 
             if (sim.Tick % o.SampleEvery == 0) WritePopulations(pop, sim);
+            if (sim.Tick % o.MetricsEvery == 0) metricsCsv.WriteLine(MetricsCsv.Row(sim, metrics.Sample()));
             if (genes != null && sim.Tick % ticksPerDay == 0) WriteGenes(genes, sim);
             if (progress != null && sim.Tick % progressEvery == 0)
             {
@@ -96,19 +118,32 @@ static class Runner
                 progress($"día {sim.Day,6:0.0} | {pops} | {sim.Tick / sw.Elapsed.TotalSeconds / 1000:0.0}k ticks/s");
             }
 
-            if (o.StopWhenExtinct && (AllExtinct(sim, animalsOnly: true) && hasAnimals || AllExtinct(sim, animalsOnly: false)))
+            if (ShouldStop(o.Stop, sim, extinct, hasAnimals))
             {
                 stoppedEarly = true;
                 break;
             }
         }
         if (sim.Tick % o.SampleEvery != 0) WritePopulations(pop, sim);
+        if (sim.Tick % o.MetricsEvery != 0) metricsCsv.WriteLine(MetricsCsv.Row(sim, metrics.Sample()));
+        MetricsCsv.WriteDeaths(Path.Combine(dir, "deaths.csv"), sim, metrics);
+        MetricsCsv.WritePreyStage(Path.Combine(dir, "prey_stage.csv"), sim, metrics);
 
         var final = Enumerable.Range(0, speciesCount).Select(sim.Population).ToArray();
         return new RunResult(seed, sim.Day, stoppedEarly, names, final, min, max, extinct,
             (long[])sim.Stats.Births.Clone(), (long[,])sim.Stats.Deaths.Clone(),
             sim.Tick / Math.Max(1e-9, sw.Elapsed.TotalSeconds));
     }
+
+    static bool IsExtinct(Simulation sim, int s, RunSettings o) =>
+        sim.Population(s) < (o.FunctionalExtinction && !sim.Species[s].IsPlant ? 2 : 1);
+
+    static bool ShouldStop(StopRule rule, Simulation sim, double?[] extinct, bool hasAnimals) => rule switch
+    {
+        StopRule.AnimalsExtinct => AllExtinct(sim, animalsOnly: true) && hasAnimals || AllExtinct(sim, animalsOnly: false),
+        StopRule.FirstExtinction => extinct.Any(d => d != null),
+        _ => false,
+    };
 
     static bool AllExtinct(Simulation sim, bool animalsOnly)
     {

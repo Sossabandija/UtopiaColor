@@ -9,16 +9,16 @@ sealed class PopulationHistory
     public const int SampleEvery = 30;
 
     public List<double> Days { get; } = [];
-    public List<int[]> Counts { get; } = [];
+    /// <summary>Una lista por especie, alineada con <see cref="Days"/>.</summary>
+    public List<List<double>> Counts { get; } = [];
     public double?[] ExtinctDay { get; private set; } = [];
-    public int Max { get; private set; } = 1;
 
     public void Reset(Simulation sim)
     {
         Days.Clear();
         Counts.Clear();
+        for (int s = 0; s < sim.Species.Count; s++) Counts.Add([]);
         ExtinctDay = new double?[sim.Species.Count];
-        Max = 1;
         Record(sim);
     }
 
@@ -32,13 +32,7 @@ sealed class PopulationHistory
 
     void Record(Simulation sim)
     {
-        var counts = new int[sim.Species.Count];
-        for (int s = 0; s < counts.Length; s++)
-        {
-            counts[s] = sim.Population(s);
-            if (counts[s] > Max) Max = counts[s];
-        }
         Days.Add(sim.Day);
-        Counts.Add(counts);
+        for (int s = 0; s < Counts.Count; s++) Counts[s].Add(sim.Population(s));
     }
 }

@@ -1,0 +1,45 @@
+// Dispersión de semillas con un gen triangular, sobre el refugio parcial de las adultas (etapa_refugio.json).
+//
+// Esquinas del gen "dispersion": 0 fruto (endozoocoria), 1 viento (anemocoria), 2 abrojo (epizoocoria).
+// Las plantas parten en el centro (1/3 de cada modo) y el gen muta: en el visor, G muestra el triángulo.
+// Los herbívoros parten folívoros puros (dieta 0, como el original) y su dieta muta: ¿aparecen frugívoros?
+//
+// Ojo: las adultas (tamaño 0.75 a 1) quedan fuera del alcance de un herbívoro de etapa 0.5, pero sus frutos no:
+// el fruto es una comida nueva que no mata a la planta.
+{
+  "extends": "etapa_refugio.json",
+
+  "genes": [
+    { "name": "dispersion", "shape": "polygon", "sides": 3, "boundary": "clamp", "vertexNames": ["fruto", "viento", "abrojo"] },
+    { "name": "dieta", "shape": "polygon", "sides": 2, "boundary": "clamp" }   // 0 folívoro (celulosa), 1 frugívoro (fructosa)
+  ],
+
+  "species": [
+    {
+      "name": "planta",
+      "initialGenes": { "dispersion": [0, 0] },
+      "mutation": { "dispersion": { "maxStep": 0.15, "exponent": 2.6 } },
+      "plant": {
+        "dispersal": {
+          "gene": "dispersion",
+          "exponent": 2,                         // intensidad = peso²: las mezclas rinden poco
+          "wind": { "maxRangeFactor": 4 },       // 100% viento: 4 veces más lejos
+          "fruit": {
+            "maxSeeds": 6,                       // 100% fruto: 6 semillas por fruto
+            "calories": 0.5,                     // para un frugívoro puro
+            "maxColorDistance": 0.6,             // solo lo comen animales de color parecido
+            "transitDays": 0.1,                  // ~2,4 h en el estómago
+            "maxOnPlant": 3
+          },
+          "burr": { "maxSeeds": 4, "dropEveryDays": 0.05, "maxOnPlant": 2 }
+        }
+      }
+    },
+    {
+      "name": "herbivoro",
+      "dietGene": "dieta",
+      "initialGenes": { "dieta": [-1] },        // dieta 0: folívoro puro
+      "mutation": { "dieta": { "maxStep": 0.15, "exponent": 2.6 } }
+    }
+  ]
+}

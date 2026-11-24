@@ -1,0 +1,65 @@
+// Experimento: el original + un gen "etapa" que decide qué etapa de la presa prefiere cada animal.
+//   etapa = 0 → prefiere plantas recién nacidas / presas flacas
+//   etapa = 1 → prefiere plantas grandes / presas gordas
+// El gen vive en una línea (polygon de 2 lados) con borde "clamp": los extremos son pegajosos
+// (desde un extremo, la mitad de las mutaciones vuelve exactamente a él).
+// Ojo: con las reglas actuales "tardío" da más calorías y no tiene costo; falta agregar una contrapartida.
+{
+  "seed": 1,
+  "world": {
+    "size": 36, "tileSize": 140, "ticksPerDay": 4500, "elevationFactor": 8,
+    "waterLevelTiles": 2.44, "drinkDepthPx": 20, "waveSizePx": 10, "wavePeriodTicks": 100,
+    "noiseFrequency": 0.15, "noiseOctaves": 4, "noiseFalloff": 0.5, "maxPlantsPerTile": 2
+  },
+  "movement": {
+    "friction": 0.85, "accel": 2, "wanderAccel": 1, "turnSpeed": 0.1, "jumpVelocity": 18, "gravity": 1,
+    "jumpChance": 0.02, "hungerSpeedPenalty": 0.25, "visionTiles": 8.6, "collisionDistancePx": 33,
+    "tickBucketCount": 20, "lookAheadTicks": 7, "birthBurstSpeedMin": 2, "birthBurstSpeedMax": 11, "birthBurstUp": 18
+  },
+  "needs": {
+    "caps": [0, 0, 0.6, 0.6, 0, 0], "rateScale": 0.00003, "idleHungerFactor": 0.3333,
+    "mateDrainMinFactor": 0.2, "waterGain": 0.40, "mateCooldown": 0.25, "fleeNearTiles": 1.0, "fleeRangeTiles": 3.5
+  },
+  "predation": { "matchGene": "color", "center": 0.5, "halfWidth": 0.21, "distanceFactor": 0.5, "exponent": 4 },
+
+  "genes": [
+    { "name": "color", "shape": "disk", "boundary": "reject" },
+    { "name": "etapa", "shape": "polygon", "sides": 2, "boundary": "clamp" }
+  ],
+
+  "species": [
+    {
+      "name": "planta", "kind": "plant", "initialCount": 77, "caloriesRate": 1.35,
+      "initialGenes": { "color": [-0.15451, -0.47553] },
+      "initialJitter": { "maxStep": 0.1, "exponent": 1 },
+      "mutation": { "color": { "maxStep": 0.28855, "exponent": 2.6 } },
+      "plant": {
+        "idealHeight": 0.55, "heightTolerance": 0.3, "heightExponent": 1.6, "minHeightFactor": 0.05,
+        "baseGrowth": 0.01, "crowdingFactor": 0.48, "growthRate": 3.0, "growthNoiseMin": 0.001,
+        "growthNoiseMax": 0.002, "seedAtSize": 1.0, "sizeLossOnSeed": 0.5, "seedBounceChance": 0.5
+      }
+    },
+    {
+      "name": "herbivoro", "kind": "animal", "initialCount": 26, "eats": ["planta"],
+      "speed": 0.51, "caloriesRate": 1.45, "needRates": [18.0, 3.3, 4.32, 0, 0, -60], "inheritance": "oneParent",
+      "preferredStageGene": "etapa",
+      "initialGenes": { "color": [-0.15451, -0.47553], "etapa": [0] },   // x = 0 → etapa 0.5 (como el original)
+      "initialJitter": { "maxStep": 0.1, "exponent": 1 },
+      "mutation": {
+        "color": { "maxStep": 0.13279, "exponent": 2.6 },
+        "etapa": { "maxStep": 0.15, "exponent": 2.6 }
+      }
+    },
+    {
+      "name": "carnivoro", "kind": "animal", "initialCount": 6, "eats": ["herbivoro"],
+      "speed": 0.58, "caloriesRate": 0.80, "needRates": [16.5, 5.0, 4.32, 0, 0, -60], "inheritance": "oneParent",
+      "preferredStageGene": "etapa",
+      "initialGenes": { "color": [-0.15451, -0.47553], "etapa": [0] },
+      "initialJitter": { "maxStep": 0.1, "exponent": 1 },
+      "mutation": {
+        "color": { "maxStep": 0.13279, "exponent": 2.6 },
+        "etapa": { "maxStep": 0.15, "exponent": 2.6 }
+      }
+    }
+  ]
+}

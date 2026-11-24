@@ -1,3 +1,15 @@
+# UtopiaColor
+
+Simulador de cadena alimenticia (plantas, herbívoros y carnívoros) cuyos genes evolucionan.
+
+| Carpeta | Qué es |
+|---|---|
+| raíz (`*.pde`) | Simulador original en Processing (3D) |
+| [`sim/`](sim) | Núcleo de la simulación en C#, sin gráficos: configuración en JSON, genes con forma, experimentos por lote en consola, tests |
+| [`godot/`](godot) | Visor 2D en Godot 4.6 .NET que usa ese núcleo |
+
+## Simulador original (Processing)
+
 Controls for this food chain simulator!
 
 | First Header  | Second Header |

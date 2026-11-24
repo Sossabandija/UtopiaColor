@@ -1,0 +1,117 @@
+// Reproduce el simulador original de Processing.
+// Se permiten comentarios. Un nombre mal escrito es un error (no se ignora).
+// Unidades: distancias en "px" del original (1 casilla = tileSize px). Lo que termina en Tiles está en casillas.
+{
+  "seed": 1,
+
+  "world": {
+    "size": 36,               // casillas por lado; el mundo es un toro (los bordes se conectan)
+    "tileSize": 140,
+    "ticksPerDay": 4500,
+    "elevationFactor": 8,     // altura máxima del terreno, en casillas
+    "waterLevelTiles": 2.44,
+    "drinkDepthPx": 20,
+    "waveSizePx": 10,
+    "wavePeriodTicks": 100,
+    "noiseFrequency": 0.15,
+    "noiseOctaves": 4,
+    "noiseFalloff": 0.5,
+    "maxPlantsPerTile": 2     // una semilla que aterriza en una casilla con más plantas que esto, muere
+  },
+
+  "movement": {
+    "friction": 0.85,
+    "accel": 2,
+    "wanderAccel": 1,
+    "turnSpeed": 0.1,
+    "jumpVelocity": 18,
+    "gravity": 1,
+    "jumpChance": 0.02,
+    "hungerSpeedPenalty": 0.25, // un animal lleno corre hasta 25% más lento
+    "visionTiles": 8.6,
+    "collisionDistancePx": 33,  // distancia para comer o aparearse
+    "tickBucketCount": 20,      // re-buscan objetivo cada 20 ticks
+    "lookAheadTicks": 7,
+    "birthBurstSpeedMin": 2,
+    "birthBurstSpeedMax": 11,
+    "birthBurstUp": 18
+  },
+
+  "needs": {
+    // 1 = satisfecha, 0 = urgente. Orden: hambre, sed, pareja, sueño, huir, cuidar crías
+    "caps": [0, 0, 0.6, 0.6, 0, 0],
+    "rateScale": 0.00003,
+    "idleHungerFactor": 0.3333,
+    "mateDrainMinFactor": 0.2,
+    "waterGain": 0.40,
+    "mateCooldown": 0.25,
+    "fleeNearTiles": 1.0,
+    "fleeRangeTiles": 3.5
+  },
+
+  // Presa comestible si su tamaño/peso cae en: center ± halfWidth·(1 − distancia_de_color·distanceFactor)^exponent
+  "predation": {
+    "matchGene": "color",
+    "center": 0.5,
+    "halfWidth": 0.21,
+    "distanceFactor": 0.5,
+    "exponent": 4
+  },
+
+  "genes": [
+    // La rueda de color: ángulo = tono, distancia al centro = saturación.
+    { "name": "color", "shape": "disk", "boundary": "reject" }
+  ],
+
+  "species": [
+    {
+      "name": "planta",
+      "kind": "plant",
+      "initialCount": 77,
+      "caloriesRate": 1.35,
+      "initialGenes": { "color": [-0.15451, -0.47553] },   // tono 0.7, saturación 0.5
+      "initialJitter": { "maxStep": 0.1, "exponent": 1 },
+      "mutation": { "color": { "maxStep": 0.28855, "exponent": 2.6 } }, // original: 0.62^2.6
+      "plant": {
+        "idealHeight": 0.55,
+        "heightTolerance": 0.3,
+        "heightExponent": 1.6,
+        "minHeightFactor": 0.05,
+        "baseGrowth": 0.01,
+        "crowdingFactor": 0.48,
+        "growthRate": 3.0,
+        "growthNoiseMin": 0.001,
+        "growthNoiseMax": 0.002,
+        "seedAtSize": 1.0,
+        "sizeLossOnSeed": 0.5,
+        "seedBounceChance": 0.5
+      }
+    },
+    {
+      "name": "herbivoro",
+      "kind": "animal",
+      "initialCount": 26,
+      "eats": ["planta"],
+      "speed": 0.51,
+      "caloriesRate": 1.45,
+      "needRates": [18.0, 3.3, 4.32, 0, 0, -60],
+      "inheritance": "oneParent",
+      "initialGenes": { "color": [-0.15451, -0.47553] },
+      "initialJitter": { "maxStep": 0.1, "exponent": 1 },
+      "mutation": { "color": { "maxStep": 0.13279, "exponent": 2.6 } } // original: 0.46^2.6
+    },
+    {
+      "name": "carnivoro",
+      "kind": "animal",
+      "initialCount": 6,
+      "eats": ["herbivoro"],
+      "speed": 0.58,
+      "caloriesRate": 0.80,
+      "needRates": [16.5, 5.0, 4.32, 0, 0, -60],
+      "inheritance": "oneParent",
+      "initialGenes": { "color": [-0.15451, -0.47553] },
+      "initialJitter": { "maxStep": 0.1, "exponent": 1 },
+      "mutation": { "color": { "maxStep": 0.13279, "exponent": 2.6 } }
+    }
+  ]
+}

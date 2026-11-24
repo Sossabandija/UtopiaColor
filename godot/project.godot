@@ -1,0 +1,29 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="UtopiaColor Visor"
+config/description="Visor 2D de la simulación de evolución UtopiaColor"
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.6", "C#", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+
+[dotnet]
+
+project/assembly_name="UtopiaViewer"
+
+[rendering]
+
+environment/defaults/default_clear_color=Color(0.06, 0.07, 0.09, 1)

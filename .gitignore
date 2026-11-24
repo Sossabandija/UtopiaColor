@@ -1,0 +1,11 @@
+# .NET
+bin/
+obj/
+.vs/
+*.user
+
+# Resultados de experimentos (se regeneran con UtopiaSim.Headless)
+runs/
+
+# Godot
+.godot/

@@ -1,0 +1,17 @@
+<Project Sdk="Godot.NET.Sdk/4.6.3">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12</LangVersion>
+    <RootNamespace>UtopiaViewer</RootNamespace>
+  </PropertyGroup>
+
+  <!-- El núcleo de la simulación, compartido con la consola y los tests. -->
+  <ItemGroup>
+    <ProjectReference Include="..\sim\UtopiaSim.Core\UtopiaSim.Core.csproj" />
+  </ItemGroup>
+
+</Project>

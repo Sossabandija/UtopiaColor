@@ -24,6 +24,8 @@ public partial class InspectorView : Control
             int lines = c.IsPlant
                 ? 3 + ShownGenes(s, c).Count() + (c.Def.Plant.Dispersal != null ? 1 : 0)
                 : 6 + ShownGenes(s, c).Count() + (c.Def.StageGeneIndex >= 0 ? 1 : 0) + (seedsWorld || c.Def.DietGeneIndex >= 0 ? 1 : 0);
+            // Diploide: el alelo oculto de un gen de 3 o más esquinas va en su propia línea.
+            if (c.Alleles != null) lines += ShownGenes(s, c).Count(g => g.Space is PolygonSpace { Sides: >= 3 });
             float height = 34 + lines * LineHeight + (c.IsPlant ? 0 : 6 + Need.Count * BarStep);
             CustomMinimumSize = new Vector2(400, height);
         }
@@ -81,9 +83,9 @@ public partial class InspectorView : Control
             string status = sim.IsDigesting(c) ? $" · saciado {(c.DigestUntil - sim.Tick) / ticksPerDay * 24:0.0} h más"
                 : sim.IsHuntCooldown(c) ? $" · cazó sin éxito, espera {(c.HuntCooldownUntil - sim.Tick) / ticksPerDay * 24:0.0} h"
                 : "";
-            if (sim.InRefuge(c)) status += " · en su refugio";
+            if (sim.InRefugeZone(c)) status += " · en su refugio";
             if (c.TooCrowdedToBreed) status += " · demasiados rivales para criar";
-            if (!c.Dead) Line($"Ahora: {Doing(c)}{status}", Colors.White);
+            if (!c.Dead) Line($"Ahora: {Doing(sim, c)}{status}", Colors.White);
             if (c.Def.StageGeneIndex >= 0) Line($"Prefiere presas en etapa {sim.PreferredStage(c):0.00} (0 = temprano, 1 = tardío)");
             bool seedsWorld = sim.Species.Any(sp => sp.IsPlant && sp.Plant.Dispersal != null);
             string carried = $"{c.SeedsInGut} semillas en el estómago · {c.BurrsCarried} abrojos";
@@ -93,17 +95,19 @@ public partial class InspectorView : Control
 
         foreach (var g in ShownGenes(sim, c))
         {
-            var v = c.Genes[g.Index];
-            string value = g.Space switch
+            string value = ValueText(g, c.Genes[g.Index]);
+            // Genética diploide: el alelo que no se expresa (si los dos dominan igual, se expresa el punto medio).
+            string? hidden = null;
+            if (c.Alleles is { } al)
             {
-                DiskSpace => $"tono {DiskSpace.Hue(v):0.00} · saturación {DiskSpace.Saturation(v):0.00}",
-                PolygonSpace { Sides: 2 } line => $"{line.LinePosition(v):0.00}",
-                PolygonSpace polygon => string.Join(" / ", polygon.VertexWeights(v).Select((w, i) =>
-                    g.Config.VertexNames is { } names ? $"{names[i]} {w:0.00}" : w.ToString("0.00"))),
-                _ => "",
-            };
+                int h = Allele.Hidden(al[2 * g.Index], al[2 * g.Index + 1]);
+                var v = al[2 * g.Index + Math.Max(h, 0)].Value;
+                hidden = h < 0 ? "codominantes" : g.Space is DiskSpace ? $"oculto: tono {DiskSpace.Hue(v):0.00}" : $"oculto: {ValueText(g, v)}";
+            }
             bool mutates = c.Def.Mutation[g.Index] != null;
-            Line($"Gen {g.Name}: {value}{(mutates ? "" : " (no muta)")}");
+            bool longValue = g.Space is PolygonSpace { Sides: >= 3 }; // no cabe en una línea: el oculto va en la siguiente
+            Line($"Gen {g.Name}: {value}{(hidden != null && !longValue ? $" · {hidden}" : "")}{(mutates ? "" : " (no muta)")}");
+            if (hidden != null && longValue) Line($"    {hidden}");
         }
 
         if (c.IsPlant) return;
@@ -148,7 +152,16 @@ public partial class InspectorView : Control
         _ => "cayendo de su madre",
     };
 
-    static string Doing(Creature c)
+    static string ValueText(GeneDef g, Vec2 v) => g.Space switch
+    {
+        DiskSpace => $"tono {DiskSpace.Hue(v):0.00} · saturación {DiskSpace.Saturation(v):0.00}",
+        PolygonSpace { Sides: 2 } line => $"{line.LinePosition(v):0.00}",
+        PolygonSpace polygon => string.Join(" / ", polygon.VertexWeights(v).Select((w, i) =>
+            g.Config.VertexNames is { } names ? $"{names[i]} {w:0.00}" : w.ToString("0.00"))),
+        _ => "",
+    };
+
+    static string Doing(Simulation sim, Creature c)
     {
         string target = c.TargetKind switch
         {
@@ -163,7 +176,10 @@ public partial class InspectorView : Control
             Need.Water => "va a beber",
             Need.Mate => hasTarget ? $"busca pareja: {target}" : "busca pareja (deambula)",
             Need.Rest => "duerme",
-            Need.Safety => c.TargetKind == TargetKind.Refuge ? "huye a su refugio" : hasTarget ? $"huye de {target}" : "huye",
+            Need.Safety => c.Burrow != null ? (sim.InBurrow(c) ? "escondido en su madriguera" : "huye a su madriguera")
+                : c.CoverPlant != null ? (sim.InCover(c) ? $"escondido en la planta #{c.CoverPlant.Id}" : $"corre a esconderse en la planta #{c.CoverPlant.Id}")
+                : c.TargetKind == TargetKind.Refuge ? "huye a su refugio"
+                : hasTarget ? $"huye de {target}" : "huye",
             Need.Care => hasTarget ? $"cuida a su cría {target}" : "cuida a su cría",
             _ => "recién nacido",
         };

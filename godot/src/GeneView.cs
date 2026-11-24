@@ -103,6 +103,20 @@ public partial class GeneView : Control
     void DrawSymbols(Vector2 center, float radius, List<int> shown, Func<int, Color> colorOf)
     {
         int g = gene!.Index;
+        // Genética diploide: primero los alelos ocultos, como puntos tenues debajo de los símbolos.
+        foreach (int s in shown)
+        {
+            if (sim!.Species[s].Config.Diploid == null) continue;
+            int stride = Math.Max(1, sim.Population(s) / MaxSymbolsPerSpecies);
+            int k = 0;
+            var faint = colorOf(s) with { A = 0.45f };
+            foreach (var c in sim.Creatures)
+            {
+                if (c.Species != s || k++ % stride != 0 || c.Alleles is not { } al) continue;
+                int h = Allele.Hidden(al[2 * g], al[2 * g + 1]);
+                if (h >= 0) DrawCircle(ToScreen(al[2 * g + h].Value, center, radius), 1.6f, faint);
+            }
+        }
         foreach (int s in shown)
         {
             int stride = Math.Max(1, sim!.Population(s) / MaxSymbolsPerSpecies);
@@ -117,6 +131,13 @@ public partial class GeneView : Control
         if (Selected is { } sel)
         {
             var p = ToScreen(sel.Genes[g], center, radius);
+            // Su alelo oculto: un anillo fino unido a lo que expresa.
+            if (sel.Alleles is { } al && Allele.Hidden(al[2 * g], al[2 * g + 1]) is >= 0 and var h)
+            {
+                var q = ToScreen(al[2 * g + h].Value, center, radius);
+                DrawDashedLine(p, q, new Color(1, 1, 1, 0.7f), 1.2f, 4);
+                DrawArc(q, 5, 0, Mathf.Tau, 16, new Color(1, 1, 1, 0.8f), 1.2f, true);
+            }
             DrawArc(p, 8, 0, Mathf.Tau, 20, Colors.White, 2.5f, true);
             DrawArc(p, 10.5f, 0, Mathf.Tau, 20, Colors.Black, 1.5f, true);
         }
@@ -155,15 +176,19 @@ public partial class GeneView : Control
         {
             int s = shown[r];
             var bins = new int[LineBins];
+            var hiddenBins = new int[LineBins]; // genética diploide: dónde están los alelos ocultos
+            bool diploid = sim!.Species[s].Config.Diploid != null;
             double sum = 0;
             int n = 0;
-            foreach (var c in sim!.Creatures)
+            foreach (var c in sim.Creatures)
             {
                 if (c.Species != s) continue;
                 double v = line.LinePosition(c.Genes[g]);
                 bins[Math.Min(LineBins - 1, (int)(v * LineBins))]++;
                 sum += v;
                 n++;
+                if (c.Alleles is { } al && Allele.Hidden(al[2 * g], al[2 * g + 1]) is >= 0 and var h)
+                    hiddenBins[Math.Min(LineBins - 1, (int)(line.LinePosition(al[2 * g + h].Value) * LineBins))]++;
             }
             float top = area.Position.Y + r * rowHeight;
             float barMax = rowHeight - 24;
@@ -173,6 +198,17 @@ public partial class GeneView : Control
             {
                 float h = barMax * bins[b] / peak;
                 DrawRect(new Rect2(area.Position.X + b * binWidth, top + rowHeight - 4 - h, binWidth - 1, h), color);
+            }
+            if (diploid)
+            {
+                // Alelos ocultos: contorno tenue con la misma escala.
+                var faint = new Color(1, 1, 1, 0.55f);
+                for (int b = 0; b < LineBins; b++)
+                {
+                    if (hiddenBins[b] == 0) continue;
+                    float h = barMax * Math.Min(hiddenBins[b], peak) / peak;
+                    DrawRect(new Rect2(area.Position.X + b * binWidth, top + rowHeight - 4 - h, binWidth - 1, h), faint, false, 1);
+                }
             }
             string mean = n > 0 ? $"media {sum / n:0.00}" : "sin individuos";
             DrawString(font, new Vector2(area.Position.X, top + 14), $"{sim.Species[s].Name}: {mean}", HorizontalAlignment.Left, -1, 13, color);

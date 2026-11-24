@@ -1,0 +1,36 @@
+// ¿Sirven las plantas grandes como escondite para los herbívoros? Base: dispersion.json, con todas las combinaciones
+// de agua, madrigueras y cobertura en plantas.
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/cobertura.json
+//
+// La cobertura es parcial: escondido en una planta grande (tamaño ≥ 0.75), un carnívoro solo lo ve a 2 casillas o menos.
+// Si el carnívoro ya está así de cerca, el herbívoro no se esconde: sale arrancando.
+//
+// Resultado (2026-11-24, semillas 1-16, 100 días, ~24 min): la cobertura no ayuda en ninguna combinación.
+//   base 0/16 · cobertura 0/16 (los herbívoros caen primero en 15/16, contra 10/16 sin ella)
+//   agua 3/16 → agua+cobertura 0/16 (mediana 1.6 días: los carnívoros no encuentran presas y caen al arranque en 11/16)
+//   madrigueras 1/16 → madrigueras+cobertura 1/16
+//   agua+madrigueras 8/16 → agua+madrigueras+cobertura 7/16 (mediana 61 → 11 días)
+// Por qué (sonda en ecosistema.json): los herbívoros escondidos en plantas casi nunca son cazados, pero la cobertura
+// reemplaza al agua (tiempo en el agua 19-20% → 14-16%), que protege más; y al arranque, con pocos herbívoros escondidos,
+// los carnívoros no ven presas. Una primera versión, en que se escondían aunque el carnívoro ya los viera, era peor:
+// el 60-75% de los herbívoros cazados estaba quieto en una planta con el carnívoro a 1.5 casillas.
+// La cobertura queda disponible ("cover"), pero no se agregó a ecosistema.json.
+{
+  "base": "../dispersion.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    "agua": {
+      "species": [ { "name": "herbivoro", "refuge": { "maxHeight": 0.3 } } ]
+    },
+    "madrigueras": {
+      "species": [ { "name": "herbivoro", "burrows": { "count": 30, "capacity": 2 } } ]
+    },
+    "cobertura": {
+      "species": [ { "name": "herbivoro", "cover": { "visibleTiles": 2 } } ]
+    }
+  }
+}

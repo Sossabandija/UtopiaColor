@@ -187,8 +187,8 @@ public sealed class SimConfig
                         Check(b.MaxSeeds >= 1 && b.DropEveryDays > 0 && b.MaxOnPlant >= 1,
                             $"{who}: plant.dispersal.burr: maxSeeds y maxOnPlant ≥ 1, dropEveryDays > 0.");
                 }
-                Check(s.DigestDays == 0 && s.MateRangeTiles == null && s.DietGene == null && s.Territory == null,
-                    $"{who}: digestDays, mateRangeTiles, dietGene y territory son solo para animales.");
+                Check(s.DigestDays == 0 && s.MateRangeTiles == null && s.DietGene == null && s.Territory == null && s.Burrows == null && s.Cover == null,
+                    $"{who}: digestDays, mateRangeTiles, dietGene, territory, burrows y cover son solo para animales.");
             }
             else
             {
@@ -200,6 +200,17 @@ public sealed class SimConfig
                 if (s.Territory is { } t)
                     Check(t.RadiusTiles > 0 && t.Interference >= 0 && t.FailCooldownDays >= 0 && t.Tolerance >= 0 && t.MaxRivalsToBreed is null or >= 0,
                         $"{who}: territory.radiusTiles debe ser positivo; interference, tolerance, maxRivalsToBreed y failCooldownDays, ≥ 0.");
+                if (s.Burrows is { } b)
+                {
+                    Check(b.Count >= 1 && b.Capacity >= 1, $"{who}: burrows.count y burrows.capacity deben ser al menos 1.");
+                    Check(b.SearchTiles > 0 && b.EnterTiles > 0 && b.MinSpacingTiles >= 0,
+                        $"{who}: burrows.searchTiles y enterTiles deben ser positivos; minSpacingTiles, ≥ 0.");
+                    Check(b.MinHeight >= 0 && b.MaxHeight <= 1 && b.MinHeight < b.MaxHeight,
+                        $"{who}: burrows necesita 0 ≤ minHeight < maxHeight ≤ 1.");
+                }
+                if (s.Cover is { } cv)
+                    Check(cv.Capacity >= 1 && cv.SearchTiles > 0 && cv.EnterTiles > 0 && cv.VisibleTiles >= 0 && cv.MinPlantSize >= 0,
+                        $"{who}: cover.capacity ≥ 1; searchTiles y enterTiles positivos; visibleTiles y minPlantSize ≥ 0.");
             }
             foreach (var food in s.Eats)
                 Check(Species.Any(o => o.Name == food), $"{who}: come '{food}', pero esa especie no existe.");
@@ -221,6 +232,9 @@ public sealed class SimConfig
                 Check(s.DietGene != s.PreferredStageGene, $"{who}: dietGene y preferredStageGene deben ser genes distintos.");
             }
             Check(s.DietExponent > 0, $"{who}: dietExponent debe ser positivo.");
+            if (s.Diploid is { } dp2)
+                Check(dp2.DominanceStep >= 0 && dp2.PollenTiles > 0 && dp2.MinDonorSize >= 0 && dp2.MinDonorSize <= 1,
+                    $"{who}: diploid.dominanceStep ≥ 0, pollenTiles > 0 y minDonorSize entre 0 y 1.");
             if (s.Refuge is { } r)
                 Check(r.MinHeight >= 0 && r.MaxHeight <= 1 && r.MinHeight < r.MaxHeight,
                     $"{who}: refuge necesita 0 ≤ minHeight < maxHeight ≤ 1.");
@@ -371,6 +385,15 @@ public sealed class SpeciesConfig
     public double? MateRangeTiles { get; set; }
     /// <summary>Refugio: zona del terreno donde nadie puede comerse a esta especie. Null = sin refugio, como el original.</summary>
     public RefugeConfig? Refuge { get; set; }
+    /// <summary>Madrigueras con cupo donde se esconde esta especie. Null = sin madrigueras, como el original.</summary>
+    public BurrowConfig? Burrows { get; set; }
+    /// <summary>Cobertura: se esconde en plantas grandes, donde los cazadores lo ven solo de cerca. Null = sin cobertura, como el original.</summary>
+    public CoverConfig? Cover { get; set; }
+    /// <summary>
+    /// Genética diploide: dos alelos por gen, se expresa el más dominante. Reemplaza a <see cref="Inheritance"/>.
+    /// En plantas además las vuelve sexuales (polen de una vecina). Null = un solo valor por gen, como el original.
+    /// </summary>
+    public DiploidConfig? Diploid { get; set; }
     /// <summary>Territorialidad: cazar con rivales de su especie cerca sale peor. Null = apagada, como el original.</summary>
     public TerritoryConfig? Territory { get; set; }
     public PlantConfig? Plant { get; set; }
@@ -467,6 +490,65 @@ public sealed class RefugeConfig
     public double MaxHeight { get; set; } = 1;
     /// <summary>Al huir, corre hacia el punto de refugio más cercano (si no, se aleja del depredador como el original).</summary>
     public bool FleeToRefuge { get; set; } = true;
+}
+
+/// <summary>
+/// Madrigueras: sitios fijos en tierra seca, repartidos al azar con la semilla de la corrida, donde caben hasta
+/// <see cref="Capacity"/> individuos de esta especie. Dentro (a menos de enterTiles del centro) nadie se los puede comer.
+/// Al sentirse amenazado corre a la madriguera más cercana con cupo a menos de searchTiles; si no hay, huye como siempre.
+/// Sale cuando otra necesidad (hambre, sed...) pesa más que el miedo. El cupo cuenta también a los que van en camino.
+/// A diferencia de una zona de refugio, protege a un número fijo de individuos: con muchos, casi todos quedan afuera;
+/// con pocos, caben todos.
+/// </summary>
+public sealed class BurrowConfig
+{
+    public int Count { get; set; } = 30;
+    public int Capacity { get; set; } = 2;
+    public double SearchTiles { get; set; } = 8;
+    /// <summary>Distancia mínima entre dos madrigueras, para repartirlas por el mapa.</summary>
+    public double MinSpacingTiles { get; set; } = 3;
+    public double EnterTiles { get; set; } = 0.3;
+    /// <summary>Alturas del suelo (0-1, como en refuge) donde se puede cavar; siempre fuera del agua.</summary>
+    public double MinHeight { get; set; }
+    public double MaxHeight { get; set; } = 1;
+}
+
+/// <summary>
+/// Cobertura: las plantas grandes (tamaño ≥ minPlantSize) esconden a esta especie, hasta <see cref="Capacity"/> por planta.
+/// Al sentirse amenazado, si no consiguió madriguera y el depredador está a más de visibleTiles, corre a la planta grande con
+/// cupo más cercana a menos de searchTiles. Si el depredador ya está a visibleTiles o menos, esconderse no sirve: sale arrancando.
+/// (Sin esta regla, en las pruebas el 60-75% de los herbívoros cazados estaba quieto en una planta con el carnívoro al lado.)
+/// Escondido (a menos de enterTiles de la planta), se queda quieto y un cazador solo lo ve a visibleTiles o menos
+/// (sin cobertura lo ve a movement.visionTiles). No es invulnerable: si el cazador llega cerca, lo caza igual.
+/// Si se comen la planta, queda al descubierto. Sale cuando otra necesidad pesa más que el miedo.
+/// </summary>
+public sealed class CoverConfig
+{
+    public double MinPlantSize { get; set; } = 0.75;
+    public int Capacity { get; set; } = 1;
+    public double SearchTiles { get; set; } = 1.5;
+    public double EnterTiles { get; set; } = 0.2;
+    public double VisibleTiles { get; set; } = 2;
+}
+
+/// <summary>
+/// Genética diploide (mendeliana). Cada gen tiene dos alelos, uno de cada padre, y cada alelo tiene una dominancia de 0 a 1
+/// que también se hereda. Se expresa el alelo más dominante (con la misma dominancia, el punto medio); el otro queda oculto:
+/// no lo ve la selección, así que puede derivar lejos y reaparecer cuando se cruzan dos portadores.
+/// Al nacer, cada padre pasa uno de sus dos alelos al azar; el valor muta como siempre (mutation) y la dominancia cambia
+/// hasta ± dominanceStep. En la población inicial las dominancias son al azar.
+/// Plantas: el padre es la planta de su especie más cercana a la madre (a menos de pollenTiles y de tamaño ≥ minDonorSize),
+/// elegida al formarse cada semilla. Sin vecina, se autopoliniza (selfing) o, con selfing = false, la semilla no se forma.
+/// </summary>
+public sealed class DiploidConfig
+{
+    public double DominanceStep { get; set; } = 0.05;
+    /// <summary>Solo plantas.</summary>
+    public double PollenTiles { get; set; } = 3;
+    /// <summary>Solo plantas.</summary>
+    public double MinDonorSize { get; set; } = 0.5;
+    /// <summary>Solo plantas.</summary>
+    public bool Selfing { get; set; } = true;
 }
 
 /// <summary>

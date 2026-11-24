@@ -63,6 +63,12 @@ sealed class MetricsHistory
             {
                 var g = m.Genes[s, colorGene.Index];
                 Add($"{sp.Name}.hue", g.Count > 0 ? DiskSpace.Hue(new Vec2(g.MeanX, g.MeanY)) : double.NaN);
+                if (sp.Config.Diploid != null)
+                {
+                    // Variación del color: la que se ve y la que está oculta en los alelos recesivos.
+                    Add($"{sp.Name}.colorSpread", g.Count > 0 ? g.Spread : double.NaN);
+                    Add($"{sp.Name}.colorHidden", g.Count > 0 ? g.HiddenSpread : double.NaN);
+                }
             }
 
             if (sp.StageGeneIndex >= 0 && sim.Genes[sp.StageGeneIndex].Space is PolygonSpace line)
@@ -90,6 +96,12 @@ sealed class MetricsHistory
                 foreach (var k in Enum.GetValues<DispersalCounter>()) Add(DispersalKey(sp, k), m.Dispersal[s, (int)k] / days);
 
             if (sim.HasRefuge(s)) Add($"{sp.Name}.inRefuge", m.InRefuge[s] * 100);
+            if (sim.HasBurrows(s))
+            {
+                Add($"{sp.Name}.inBurrow", m.InBurrow[s] * 100);
+                Add($"{sp.Name}.burrowUse", m.BurrowUse[s] * 100);
+            }
+            if (sim.HasCover(s)) Add($"{sp.Name}.inCover", m.InCover[s] * 100);
             if (sp.Config.Territory is { Interference: > 0 }) Add($"{sp.Name}.huntsFailed", m.HuntsFailed[s] / days);
         }
     }

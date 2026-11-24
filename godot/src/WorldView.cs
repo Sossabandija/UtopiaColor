@@ -18,6 +18,7 @@ public partial class WorldView : Node2D
     const float MinPlantScreenPx = 2.2f;
     const float MinSeedScreenPx = 1.2f;
     const float MinAnimalScreenPx = 6.5f;
+    const float MinBurrowScreenPx = 7f;
     const float TerrainSaturation = 0.6f;
     const float TerrainBrightness = 0.55f;
 
@@ -44,6 +45,7 @@ public partial class WorldView : Node2D
     SelectionOverlay overlay = null!;
     SpeciesLayer[] layers = [];
     SpeciesLayer? markers; // frutos y abrojos sobre las plantas
+    SpeciesLayer? burrowLayer; // madrigueras: sobre las plantas (si no, el pasto las tapa) y bajo los animales
     bool dragging;
     float dragDistance;
 
@@ -91,13 +93,17 @@ public partial class WorldView : Node2D
 
         foreach (var l in layers) l.Free();
         markers?.Free();
-        // Plantas primero para que queden debajo de los animales; entre medio, sus frutos y abrojos.
+        burrowLayer?.Free();
+        // Plantas primero para que queden debajo de los animales; entre medio, sus frutos y abrojos y las madrigueras.
         float width = (float)s.Map.Width;
         layers = new SpeciesLayer[s.Species.Count];
         foreach (var sp in s.Species.Where(sp => sp.IsPlant))
             layers[sp.Index] = new SpeciesLayer(creatureRoot, sp, Palette.ForSpecies(sp.Index), CopyOffsets(width));
         markers = s.Species.Any(sp => sp.IsPlant && sp.Plant.Dispersal != null)
             ? new SpeciesLayer(creatureRoot, -1, Meshes.Circle, withBorder: false, default, CopyOffsets(width))
+            : null;
+        burrowLayer = s.Burrows.Count > 0
+            ? new SpeciesLayer(creatureRoot, -1, Meshes.Circle, withBorder: true, Palette.BurrowRim, CopyOffsets(width))
             : null;
         foreach (var sp in s.Species.Where(sp => !sp.IsPlant))
             layers[sp.Index] = new SpeciesLayer(creatureRoot, sp, Palette.ForSpecies(sp.Index), CopyOffsets(width));
@@ -152,13 +158,27 @@ public partial class WorldView : Node2D
             }
             else
             {
-                // Más gordo = más lleno, como en el original.
+                // Más gordo = más lleno, como en el original. Escondido (madriguera o planta): semitransparente.
                 float s = Math.Max(minAnimal, 16f + 14f * (float)Math.Clamp(c.Needs[Need.Food], 0, 1));
+                if ((c.Burrow != null || c.CoverPlant != null) && (sim.InBurrow(c) || sim.InCover(c))) color.A = 0.45f;
                 layers[c.Species].Add(pos, (float)c.Angle, s, color);
             }
         }
         foreach (var l in layers) l.End();
         markers?.End();
+
+        // Madrigueras: hoyo oscuro que se llena con el color de su especie según el cupo reclamado.
+        if (burrowLayer != null)
+        {
+            burrowLayer.Begin(sim.Burrows.Count);
+            float r = Math.Max(MinBurrowScreenPx / zoom, 0.4f * (float)sim.Map.TileSize);
+            foreach (var b in sim.Burrows)
+            {
+                var fill = Palette.BurrowHole.Lerp(Palette.ForSpecies(b.Species), (float)b.Claims / b.Capacity);
+                burrowLayer.Add(new Vector2((float)b.X, (float)b.Y), 0, r, fill);
+            }
+            burrowLayer.End();
+        }
 
         if (Selected is { Dead: true }) Follow = false;
         if (Follow && Selected != null)

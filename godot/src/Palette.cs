@@ -35,6 +35,9 @@ static class Palette
     public static readonly Color Danger = new(1.00f, 0.40f, 0.35f);
     /// <summary>Modos de dispersión: fruto, viento, abrojo (mismo orden que las esquinas del gen).</summary>
     public static readonly Color[] Dispersal = [new(1.00f, 0.42f, 0.25f), new(0.55f, 0.85f, 1.00f), new(0.88f, 0.78f, 0.40f)];
+    /// <summary>Madrigueras: el hoyo vacío y el borde de tierra; se llenan con el color de su especie según el cupo usado.</summary>
+    public static readonly Color BurrowHole = new(0.10f, 0.07f, 0.05f);
+    public static readonly Color BurrowRim = new(0.92f, 0.80f, 0.55f);
 
     public static Color ForSpecies(int index) => SpeciesColors[index % SpeciesColors.Length];
 

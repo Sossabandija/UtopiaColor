@@ -3,13 +3,15 @@
 //   - etapa_refugio.json: las plantas adultas quedan fuera del alcance de un herbívoro de etapa 0.5;
 //     carnívoros con saciedad y pareja a distancia.
 //   - dispersion.json: semillas por fruto, viento o abrojo (gen triangular) y dieta de los herbívoros.
-//   - aquí: los herbívoros se refugian en el agua, donde los carnívoros no cazan.
+//   - aquí: los herbívoros se refugian en el agua, donde los carnívoros no cazan, y en 30 madrigueras de 2 lugares.
 //
-// En experimentos/depredadores.json, 3 de 16 semillas coexistieron los 100 días (semillas 2, 8 y 12).
-// Para ver una en el visor: elige "ecosistema" y la semilla 8.
+// En experimentos/madrigueras.json, 8 de 16 semillas coexistieron los 100 días (1, 2, 3, 5, 6, 7, 8 y 15).
+// Antes, solo con el agua, fueron 3 de 16 (experimentos/depredadores.json).
+// Para ver una en el visor: elige "ecosistema" y la semilla 1 (los herbívoros caen a 33 el día 42 y se recuperan
+// gracias a las madrigueras) o la 8.
 {
   "extends": "dispersion.json",
   "species": [
-    { "name": "herbivoro", "refuge": { "maxHeight": 0.3 } }
+    { "name": "herbivoro", "refuge": { "maxHeight": 0.3 }, "burrows": { "count": 30, "capacity": 2 } }
   ]
 }

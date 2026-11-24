@@ -14,6 +14,7 @@ static class MetricsCsv
         string.Concat(pascal.Select((ch, i) => char.IsUpper(ch) ? (i > 0 ? "_" : "") + char.ToLowerInvariant(ch) : ch.ToString()));
 
     static IEnumerable<SpeciesDef> Dispersing(Simulation sim) => sim.Species.Where(sp => sp.IsPlant && sp.Plant.Dispersal != null);
+    static IEnumerable<SpeciesDef> DiploidPlants(Simulation sim) => sim.Species.Where(sp => sp.IsPlant && sp.Config.Diploid != null);
 
     /// <summary>Nombre de cada esquina de un polígono de 3 o más lados (vertexNames, o v0, v1...).</summary>
     static IEnumerable<string> CornerNames(GeneDef g, PolygonSpace poly) =>
@@ -32,7 +33,11 @@ static class MetricsCsv
     ///   {especie}_{gen}_x / _y / _spread (y _hue si el gen es un disco, _pos de 0 a 1 si es una línea,
     ///   el peso de cada esquina si es un polígono de 3 o más lados)
     ///   {planta con dispersión}_seeds_parent/_wind/_gut/_burr, _seeds_digested, _fruits_eaten/_fallen, _burrs_attached/_fallen (por día)
-    ///   {especie con territorialidad}_hunts_failed_per_day; {especie con refugio}_in_refuge (fracción que está en su refugio)
+    ///   {especie con territorialidad}_hunts_failed_per_day; {especie con refugio o madrigueras}_in_refuge (fracción escondida)
+    ///   {especie con madrigueras}_in_burrow (fracción dentro de una madriguera), _burrow_use (fracción del cupo reclamada)
+    ///   {especie con cobertura}_in_cover (fracción escondida en una planta grande)
+    ///   {especie diploide}_{gen}_hidden_spread (distancia del alelo oculto al centro de lo expresado), _allele_gap (entre sus dos alelos)
+    ///   {planta diploide}_selfed_per_day (semillas autopolinizadas), _unpollinated_per_day (sin polen, sin semilla)
     /// </summary>
     public static string Header(Simulation sim)
     {
@@ -53,12 +58,16 @@ static class MetricsCsv
                 if (g.Space is DiskSpace) cols.Add($"{sp.Name}_{g.Name}_hue");
                 if (g.Space is PolygonSpace { Sides: 2 }) cols.Add($"{sp.Name}_{g.Name}_pos");
                 if (g.Space is PolygonSpace { Sides: >= 3 } poly) cols.AddRange(CornerNames(g, poly).Select(v => $"{sp.Name}_{g.Name}_{v}"));
+                if (sp.Config.Diploid != null) cols.AddRange([$"{sp.Name}_{g.Name}_hidden_spread", $"{sp.Name}_{g.Name}_allele_gap"]);
             }
         }
         foreach (var sp in Dispersing(sim))
             cols.AddRange(Counters.Select(k => $"{sp.Name}_{Snake(k.ToString())}_per_day"));
         foreach (var sp in sim.Species.Where(sp => sp.Config.Territory != null)) cols.Add($"{sp.Name}_hunts_failed_per_day");
+        foreach (var sp in DiploidPlants(sim)) cols.AddRange([$"{sp.Name}_selfed_per_day", $"{sp.Name}_unpollinated_per_day"]);
         foreach (var sp in sim.Species.Where(sp => sim.HasRefuge(sp.Index))) cols.Add($"{sp.Name}_in_refuge");
+        foreach (var sp in sim.Species.Where(sp => sim.HasBurrows(sp.Index))) cols.AddRange([$"{sp.Name}_in_burrow", $"{sp.Name}_burrow_use"]);
+        foreach (var sp in sim.Species.Where(sp => sim.HasCover(sp.Index))) cols.Add($"{sp.Name}_in_cover");
         return string.Join(',', cols);
     }
 
@@ -98,13 +107,30 @@ static class MetricsCsv
                     var w = any ? poly.VertexWeights(new Vec2(gs.MeanX, gs.MeanY)) : null;
                     for (int i = 0; i < poly.Sides; i++) cells.Add(w != null ? F(w[i]) : "");
                 }
+                if (sp.Config.Diploid != null)
+                {
+                    cells.Add(any && !double.IsNaN(gs.HiddenSpread) ? F(gs.HiddenSpread) : "");
+                    cells.Add(any && !double.IsNaN(gs.AlleleGap) ? F(gs.AlleleGap) : "");
+                }
             }
         }
         foreach (var sp in Dispersing(sim))
             cells.AddRange(Counters.Select(k => F(m.Dispersal[sp.Index, (int)k] / days)));
         foreach (var sp in sim.Species.Where(sp => sp.Config.Territory != null)) cells.Add(F(m.HuntsFailed[sp.Index] / days));
+        foreach (var sp in DiploidPlants(sim))
+        {
+            cells.Add(F(m.Selfed[sp.Index] / days));
+            cells.Add(F(m.Unpollinated[sp.Index] / days));
+        }
         foreach (var sp in sim.Species.Where(sp => sim.HasRefuge(sp.Index)))
             cells.Add(double.IsNaN(m.InRefuge[sp.Index]) ? "" : F(m.InRefuge[sp.Index]));
+        foreach (var sp in sim.Species.Where(sp => sim.HasBurrows(sp.Index)))
+        {
+            cells.Add(double.IsNaN(m.InBurrow[sp.Index]) ? "" : F(m.InBurrow[sp.Index]));
+            cells.Add(double.IsNaN(m.BurrowUse[sp.Index]) ? "" : F(m.BurrowUse[sp.Index]));
+        }
+        foreach (var sp in sim.Species.Where(sp => sim.HasCover(sp.Index)))
+            cells.Add(double.IsNaN(m.InCover[sp.Index]) ? "" : F(m.InCover[sp.Index]));
         return string.Join(',', cells);
     }
 

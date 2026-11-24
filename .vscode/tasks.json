@@ -1,0 +1,23 @@
+// Tareas de compilación que usan las configuraciones de F5 (launch.json). Ctrl+Shift+B compila el visor.
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Compilar visor",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/godot/UtopiaViewer.csproj", "-nologo", "/property:GenerateFullPaths=true", "/consoleloggerparameters:NoSummary"],
+      "problemMatcher": "$msCompile",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "Compilar simulación",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/sim/UtopiaSim.Headless/UtopiaSim.Headless.csproj", "-nologo", "/property:GenerateFullPaths=true", "/consoleloggerparameters:NoSummary"],
+      "problemMatcher": "$msCompile",
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    }
+  ]
+}

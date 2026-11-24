@@ -1,0 +1,32 @@
+// ¿Protege mejor a los herbívoros un refugio con cupo (madrigueras) que una zona sin límite (el agua)?
+// Base: dispersion.json (refugio parcial de las plantas adultas + fruto, viento y abrojo + dieta de los herbívoros).
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/madrigueras.json
+//
+// La idea: el agua protege a cualquiera que llegue, pero ahí no hay comida y tienen que salir. Una madriguera protege
+// a un número fijo: con muchos herbívoros casi todos quedan afuera (los carnívoros comen); con pocos caben todos
+// (la especie no desaparece).
+//
+// Resultado (2026-11-24, semillas 1-16, 100 días, ~15 min):
+//   base 0/16 · agua 3/16 · madrigueras 1/16 · agua+madrigueras 8/16 (semillas 1, 2, 3, 5, 6, 7, 8, 15; mediana 61 días).
+// Con madrigueras los herbívoros nunca fueron los primeros en caer (0/32): ninguna corrida bajó de ~22 herbívoros.
+// Hacen lo esperado: en la semilla 1 (con agua), con 33 herbívoros el 58% estaba en una madriguera; con 500-1300, menos del 5%.
+// Solas no bastan: los herbívoros sobreviven pero los carnívoros se extinguen (15/16). Con el agua, la mitad coexiste.
+// Lo que sigue fallando son los carnívoros: 5 de las 8 corridas perdidas caen bajo 2 carnívoros antes del día 2.5 (el arranque).
+{
+  "base": "../dispersion.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    // Refugio en el agua (suelo bajo 0.3 de la altura máxima), como en ecosistema.json.
+    "agua": {
+      "species": [ { "name": "herbivoro", "refuge": { "maxHeight": 0.3 } } ]
+    },
+    // 30 madrigueras de 2 lugares en tierra seca: protegen como máximo a 60 herbívoros.
+    "madrigueras": {
+      "species": [ { "name": "herbivoro", "burrows": { "count": 30, "capacity": 2 } } ]
+    }
+  }
+}

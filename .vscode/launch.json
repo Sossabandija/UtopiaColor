@@ -1,0 +1,59 @@
+// F5 en VS Code: compila y abre el visor de Godot con el depurador de C# conectado.
+// Los breakpoints funcionan en godot/src y en sim/UtopiaSim.Core (la simulación).
+// Requiere la extensión "C#" (ms-dotnettools.csharp).
+// Si Godot 4.6 .NET está en otra carpeta, cambia "program" en las dos configuraciones del visor.
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Visor Godot (debug)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Compilar visor",
+      "program": "${env:USERPROFILE}/Documents/Godot_v4.6.3-stable_mono_win64/Godot_v4.6.3-stable_mono_win64/Godot_v4.6.3-stable_mono_win64.exe",
+      "args": ["--path", "${workspaceFolder}/godot"],
+      "cwd": "${workspaceFolder}/godot",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      // Pregunta la configuración y la semilla antes de abrir.
+      "name": "Visor Godot: elegir configuración y semilla (debug)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Compilar visor",
+      "program": "${env:USERPROFILE}/Documents/Godot_v4.6.3-stable_mono_win64/Godot_v4.6.3-stable_mono_win64/Godot_v4.6.3-stable_mono_win64.exe",
+      "args": ["--path", "${workspaceFolder}/godot", "--", "--config", "${input:config}", "--seed", "${input:seed}"],
+      "cwd": "${workspaceFolder}/godot",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      // La simulación sin gráficos (UtopiaSim.Headless): 5 días de ecosistema.json, resultados en sim/runs/debug.
+      "name": "Consola: simulación (debug)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Compilar simulación",
+      "program": "${workspaceFolder}/sim/UtopiaSim.Headless/bin/Debug/net8.0/utopiasim.dll",
+      "args": ["-c", "configs/ecosistema.json", "-d", "5", "-o", "runs/debug"],
+      "cwd": "${workspaceFolder}/sim",
+      "console": "integratedTerminal",
+      "stopAtEntry": false
+    }
+  ],
+  "inputs": [
+    {
+      "id": "config",
+      "type": "pickString",
+      "description": "Configuración (sim/configs)",
+      "options": ["ecosistema.json", "dispersion.json", "etapa_refugio.json", "etapa.json", "original.json"],
+      "default": "ecosistema.json"
+    },
+    {
+      "id": "seed",
+      "type": "promptString",
+      "description": "Semilla",
+      "default": "1"
+    }
+  ]
+}

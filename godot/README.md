@@ -15,6 +15,20 @@ Ambos buscan Godot en `Documentos\Godot_v4.6.3-stable_mono_win64\...`. Si lo mue
 
 Desde el administrador de proyectos de Godot: *Importar* → `godot/project.godot` → *Editar* → **F5**.
 
+### Depurar desde VS Code (F5)
+
+Abre la carpeta del repo en VS Code y presiona **F5**: compila el visor y abre Godot con el depurador de C# conectado. Los breakpoints funcionan en `godot/src` y en la simulación (`sim/UtopiaSim.Core`). Requiere la extensión **C#** (`ms-dotnettools.csharp`); VS Code la sugiere al abrir el repo.
+
+En la vista *Ejecutar y depurar* (Ctrl+Shift+D) hay tres opciones:
+
+| Opción | Qué hace |
+|---|---|
+| **Visor Godot (debug)** | Abre el visor como siempre. |
+| **Visor Godot: elegir configuración y semilla (debug)** | Pregunta la configuración (por defecto `ecosistema.json`) y la semilla antes de abrir. |
+| **Consola: simulación (debug)** | Corre la simulación sin gráficos, 5 días de `ecosistema.json`, y guarda los resultados en `sim/runs/debug`. |
+
+Las tres configuraciones están en `.vscode/launch.json`. Si Godot está en otra carpeta, cambia `"program"` en las dos opciones del visor. Ctrl+Shift+B solo compila.
+
 Las configuraciones se leen de `sim/configs/*.json`. Si editas un JSON, basta con apretar **Reiniciar**: no hay que recompilar.
 
 ### Si Godot se ve todo gris
@@ -36,6 +50,8 @@ O usa los `.bat` de arriba, que no pasan por el administrador.
   - Animales: flechas que apuntan hacia donde miran. El relleno es el color de su gen y el borde el de su especie. Más gordo = más lleno.
   - El mundo es un toro: alrededor del mapa se dibujan copias atenuadas de lo que hay al otro lado.
   - Con dispersión de semillas, las plantas muestran sus frutos (punto rojo-anaranjado) y abrojos (punto pajizo), más grandes mientras más tengan.
+  - Con madrigueras: círculos con borde de tierra clara. Vacías son negras y se van llenando con el color de su especie según el cupo reclamado (los que están dentro y los que van corriendo hacia ella).
+  - Un animal escondido (en una madriguera o en una planta) se dibuja semitransparente.
   - De noche todo se oscurece un poco (tecla N para quitarlo).
 - **Panel** (derecha):
   - Configuración, semilla y **Reiniciar**.
@@ -45,20 +61,23 @@ O usa los `.bat` de arriba, que no pasan por el administrador.
     - *Comida a la vista*: para cada especie que come, cuántas presas ve cada individuo, cuántas tienen el tamaño justo y cuántas son comestibles. Si "tamaño justo" es alto pero "comestibles" es bajo, el problema es el color.
     - *Nacimientos y muertes*: por día y por causa (hambre, sed, comidos, sin espacio, como brote). Solo aparecen las causas que ocurrieron.
     - *Etapa preferida por especie* (con gen de etapa): 0 = prefiere presas tempranas, 1 = tardías. La línea gris marca desde qué etapa un herbívoro alcanza a las plantas que ya soltaron semilla: si la curva de herbívoros la cruza, se están comiendo a las adultas.
-    - *Presas en su refugio (%)* (con refugio): qué parte de cada especie está escondida.
+    - *Presas en su refugio (%)* (con refugio, madrigueras o cobertura): qué parte de cada especie está a salvo (en su zona de refugio o en una madriguera). Con madrigueras, además, qué parte está dentro de una y qué parte del cupo está reclamada; con cobertura, qué parte está escondida en una planta (ahí solo se la ve de cerca, pero se la puede cazar).
     - *Dieta por especie* (con gen de dieta): 0 = folívoro, 1 = frugívoro.
     - *Gen dispersion: planta* (y cualquier gen de 3 o más esquinas): el peso promedio de cada esquina en el tiempo.
     - *Semillas por modo: planta* (con dispersión): cuántas semillas por día cayeron de la madre, volaron con el viento, salieron de un estómago o cayeron de un abrojo, y cuántas se destruyeron en estómagos.
     - *Tono de color por especie*: el tono promedio en el tiempo. Ahí se ve la carrera circular: las plantas escapan por la rueda y los herbívoros las persiguen.
     - *Distancia de color a la comida*: qué tan lejos en la rueda está, en promedio, la comida que ve cada especie.
+    - *Variación de color: expresada y oculta* (con genética diploide): qué tan lejos del color promedio de la especie están lo que se expresa y los alelos ocultos. Si "oculta" crece más que "expresada", la especie está guardando colores que la selección no ve.
   - **Genes**: la forma de cada gen con un símbolo por ser (X planta, □ herbívoro, ○ carnívoro):
     - Rueda: la rueda de color del original.
     - Polígono: sus esquinas, con nombre si el gen tiene `vertexNames` (por ejemplo fruto, viento, abrojo).
     - Línea: un histograma por especie con su media.
+    - Con genética diploide, los alelos ocultos aparecen como puntos tenues (en la línea, como un contorno). Del ser seleccionado, una línea punteada une lo que expresa con su alelo oculto.
 - **Ficha** (abajo a la izquierda, al hacer clic en un ser): qué está haciendo, padres, genes y la urgencia de cada necesidad. La necesidad que atiende va enmarcada. En el mundo se dibuja la línea hacia su objetivo y su rango de visión.
   - Con brotes frágiles, un brote muestra su riesgo de morir por día.
   - Con saciedad, un animal que acaba de comer muestra cuántas horas le quedan sin cazar.
-  - Con refugio y territorio: si está en su refugio, si huye hacia él, si tiene demasiados rivales cerca para criar o si espera tras una caza fallida.
+  - Con refugio, madrigueras, cobertura y territorio: si está en su refugio, si huye hacia él, hacia su madriguera o hacia una planta, si está escondido, si tiene demasiados rivales cerca para criar o si espera tras una caza fallida.
+  - Con genética diploide, cada gen muestra también su alelo oculto (o "codominantes" si los dos dominan igual).
   - Con dispersión, una planta muestra cómo llegó (de su madre, con el viento, en un estómago o en un abrojo) y cuántos frutos y abrojos tiene; un animal, su dieta y cuántas semillas y abrojos lleva.
 
 ## Controles

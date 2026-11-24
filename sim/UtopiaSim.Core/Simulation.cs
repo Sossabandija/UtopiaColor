@@ -40,6 +40,9 @@ public sealed class Simulation
     readonly int[] burrSpecies;    // plantas que pueden tener abrojos
     // Por especie: su refugio y, para cada vértice del mapa, el vértice de refugio más cercano (null si no hay).
     readonly ((int X, int Y)[,]? Table, RefugeConfig? Config)[] refuges;
+    readonly Burrow[]?[] burrows;  // por especie: sus madrigueras (null si no tiene)
+    readonly int[] plantSpecies;   // dónde buscar cobertura
+    readonly Rng geneticsRng;      // genética diploide: su propio generador, para que activarla no cambie la población inicial
     readonly List<int> touchCells = [];
     int activeBurrs;               // abrojos esperando en plantas: si es 0, nadie revisa si toca uno
     int nextId;
@@ -52,6 +55,7 @@ public sealed class Simulation
         Config = config;
         Seed = seed ?? config.Seed;
         rng = new Rng(Seed);
+        geneticsRng = new Rng(Seed ^ 0x6469706C6F696465UL); // "diploide"
 
         var genes = new GeneDef[config.Genes.Count];
         for (int i = 0; i < genes.Length; i++) genes[i] = new GeneDef(i, config.Genes[i]);
@@ -95,6 +99,9 @@ public sealed class Simulation
             double ef = config.World.ElevationFactor;
             refuges[sp.Index] = (Map.ClosestVertices((x, y) => InHeightRange(Map.Elevation(x, y) / ef, r)), r);
         }
+        plantSpecies = species.Where(sp => sp.IsPlant).Select(sp => sp.Index).ToArray();
+        burrows = PlaceBurrows();
+        Burrows = burrows.Where(b => b != null).SelectMany(b => b!).ToArray();
         daylight = ComputeDaylight(0);
 
         SpawnInitialPopulation();
@@ -114,6 +121,8 @@ public sealed class Simulation
     public double Daylight => daylight;
     /// <summary>Todos los seres vivos (después de cada <see cref="Step"/> no quedan muertos aquí).</summary>
     public IReadOnlyList<Creature> Creatures => creatures;
+    /// <summary>Todas las madrigueras del mapa, de todas las especies (no cambian durante la corrida).</summary>
+    public IReadOnlyList<Burrow> Burrows { get; }
 
     /// <summary>Se dispara en cada nacimiento, muerte, comida, trago y apareamiento. Null = sin costo.</summary>
     public event Action<SimEvent>? EventRaised;
@@ -198,7 +207,7 @@ public sealed class Simulation
         double center = PreferredStage(eater);
         double stage = food.IsPlant ? food.PlantSize : food.Needs[Need.Food];
         if (stage < center - p.HalfWidth || stage > center + p.HalfWidth) return false; // fuera incluso de la ventana más ancha
-        if (refuges[food.Species].Config != null && InRefuge(food)) return false;
+        if (InRefuge(food)) return false;
         double dist = MatchGene == null
             ? 0
             : MatchGene.Space.Distance(eater.Genes[MatchGene.Index], food.Genes[MatchGene.Index]);
@@ -265,16 +274,43 @@ public sealed class Simulation
     /// <summary>¿Está esperando después de una caza fallida (territorialidad)?</summary>
     public bool IsHuntCooldown(Creature c) => Tick < c.HuntCooldownUntil;
 
-    /// <summary>¿Está en su zona de refugio, donde nadie se la puede comer?</summary>
-    public bool InRefuge(Creature c)
-    {
-        return refuges[c.Species].Config is { } r && InHeightRange(Map.NormalizedHeight(c.X, c.Y), r);
-    }
+    /// <summary>¿Está escondido, donde nadie se lo puede comer: en su zona de refugio o dentro de su madriguera?</summary>
+    public bool InRefuge(Creature c) => InRefugeZone(c) || InBurrow(c);
+
+    /// <summary>¿Está en su zona de refugio (por la altura del suelo)?</summary>
+    public bool InRefugeZone(Creature c) =>
+        refuges[c.Species].Config is { } r && InHeightRange(Map.NormalizedHeight(c.X, c.Y), r);
+
+    /// <summary>¿Está dentro de la madriguera que reclamó?</summary>
+    public bool InBurrow(Creature c) =>
+        c.Burrow is { } b && Map.LoopDistance(c.X, c.Y, b.X, b.Y) <= c.Def.Config.Burrows!.EnterTiles * Map.TileSize;
 
     static bool InHeightRange(double h, RefugeConfig r) => h >= r.MinHeight && h <= r.MaxHeight;
 
-    /// <summary>¿Tiene zona de refugio esta especie (y existe en este mapa)?</summary>
-    public bool HasRefuge(int species) => refuges[species].Config != null;
+    /// <summary>¿Está escondido en la planta que reclamó (cobertura)? Ahí no es invulnerable: solo se lo ve de cerca.</summary>
+    public bool InCover(Creature c) =>
+        CoverStillThere(c) && Map.LoopDistance(c.X, c.Y, c.CoverPlant!.X, c.CoverPlant.Y) <= c.Def.Config.Cover!.EnterTiles * Map.TileSize;
+
+    /// <summary>¿Sigue viva y grande la planta que reclamó?</summary>
+    bool CoverStillThere(Creature c) =>
+        c.CoverPlant is { Dead: false } p && p.PlantSize >= c.Def.Config.Cover!.MinPlantSize;
+
+    /// <summary>¿Lo ve un cazador a <paramref name="distance"/> px? Escondido en una planta, solo a cover.visibleTiles o menos.</summary>
+    bool HiddenFrom(Creature prey, double distance) =>
+        prey.CoverPlant != null && distance > prey.Def.Config.Cover!.VisibleTiles * Map.TileSize && InCover(prey);
+
+    /// <summary>¿Puede <paramref name="hunter"/> ver a <paramref name="prey"/> (aunque esté escondido en una planta)?</summary>
+    public bool CanSpot(Creature hunter, Creature prey) =>
+        !HiddenFrom(prey, Map.LoopDistance(hunter.X, hunter.Y, prey.X, prey.Y));
+
+    /// <summary>¿Tiene esta especie dónde esconderse (zona de refugio, madrigueras o plantas)?</summary>
+    public bool HasRefuge(int species) => refuges[species].Config != null || burrows[species] != null || HasCover(species);
+
+    /// <summary>¿Tiene madrigueras esta especie?</summary>
+    public bool HasBurrows(int species) => burrows[species] != null;
+
+    /// <summary>¿Se esconde esta especie en plantas grandes?</summary>
+    public bool HasCover(int species) => Species[species].Config.Cover != null;
 
     /// <summary>¿Es un brote que todavía puede morir antes de establecerse?</summary>
     public static bool IsSeedling(Creature c) =>
@@ -293,6 +329,33 @@ public sealed class Simulation
 
     // ------------------------------------------------------------------ población
 
+    /// <summary>
+    /// Reparte las madrigueras de cada especie en tierra seca, separadas al menos minSpacingTiles.
+    /// Usa su propio generador (derivado de la semilla) para que activarlas no cambie la población inicial:
+    /// así una comparación con y sin madrigueras parte igual.
+    /// </summary>
+    Burrow[]?[] PlaceBurrows()
+    {
+        var result = new Burrow[]?[Species.Count];
+        var placeRng = new Rng(Seed ^ 0x6D61647269677561UL); // "madrigua"
+        foreach (var sp in Species)
+        {
+            if (sp.Config.Burrows is not { } cfg) continue;
+            var list = new List<Burrow>();
+            double spacing = cfg.MinSpacingTiles * Map.TileSize;
+            for (int attempt = 0; attempt < 1000 * cfg.Count && list.Count < cfg.Count; attempt++)
+            {
+                double x = placeRng.NextDouble() * Map.Width, y = placeRng.NextDouble() * Map.Width;
+                double h = Map.NormalizedHeight(x, y);
+                if (Map.GroundLevel(x, y) <= Map.WaterLevelPx || h < cfg.MinHeight || h > cfg.MaxHeight) continue;
+                if (list.Any(b => Map.LoopDistance(x, y, b.X, b.Y) < spacing)) continue;
+                list.Add(new Burrow(sp.Index, x, y, cfg.Capacity));
+            }
+            result[sp.Index] = list.ToArray();
+        }
+        return result;
+    }
+
     void SpawnInitialPopulation()
     {
         foreach (var sp in Species)
@@ -306,6 +369,7 @@ public sealed class Simulation
                     genes[g] = Genes[g].Space.Mutate(sp.InitialGenes[g], rng, jitter.MaxStep, jitter.Exponent);
 
                 var c = CreateCreature(sp, x, y, angle, genes, generation: 0, parentA: null, parentB: null);
+                if (sp.Config.Diploid != null) InitialAlleles(sp, c);
                 c.Z = Map.GroundLevel(x, y);
                 if (sp.IsPlant)
                 {
@@ -358,6 +422,61 @@ public sealed class Simulation
         }
     }
 
+    // ------------------------------------------------------------------ genética diploide
+
+    /// <summary>
+    /// Población inicial: el primer alelo es el gen que se sorteó como siempre; el segundo, otro sorteo alrededor
+    /// del valor inicial. Dominancias al azar.
+    /// </summary>
+    void InitialAlleles(SpeciesDef sp, Creature c)
+    {
+        var jitter = sp.Config.InitialJitter;
+        var alleles = new Allele[2 * Genes.Count];
+        for (int g = 0; g < Genes.Count; g++)
+        {
+            var second = Genes[g].Space.Mutate(sp.InitialGenes[g], geneticsRng, jitter.MaxStep, jitter.Exponent);
+            alleles[2 * g] = new Allele(c.Genes[g], geneticsRng.NextDouble());
+            alleles[2 * g + 1] = new Allele(second, geneticsRng.NextDouble());
+            c.Genes[g] = Allele.Express(Genes[g].Space, alleles[2 * g], alleles[2 * g + 1]);
+        }
+        c.Alleles = alleles;
+    }
+
+    /// <summary>Cría diploide: un alelo al azar de cada padre por gen, con mutación. Devuelve los genes que se expresan.</summary>
+    Vec2[] InheritAlleles(SpeciesDef sp, Creature mother, Creature father, out Allele[] alleles)
+    {
+        alleles = new Allele[2 * Genes.Count];
+        var genes = new Vec2[Genes.Count];
+        for (int g = 0; g < Genes.Count; g++)
+        {
+            alleles[2 * g] = Gamete(sp, mother, g);
+            alleles[2 * g + 1] = Gamete(sp, father, g);
+            genes[g] = Allele.Express(Genes[g].Space, alleles[2 * g], alleles[2 * g + 1]);
+        }
+        return genes;
+    }
+
+    /// <summary>El alelo que <paramref name="parent"/> pasa a una cría para el gen <paramref name="g"/>.</summary>
+    Allele Gamete(SpeciesDef sp, Creature parent, int g)
+    {
+        var a = parent.Alleles![2 * g + geneticsRng.Below(2)];
+        var m = sp.Mutation[g];
+        var value = m == null ? a.Value : Genes[g].Space.Mutate(a.Value, geneticsRng, m.MaxStep, m.Exponent);
+        double step = sp.Config.Diploid!.DominanceStep;
+        double dominance = step > 0 ? Math.Clamp(a.Dominance + geneticsRng.Range(-step, step), 0, 1) : a.Dominance;
+        return new Allele(value, dominance);
+    }
+
+    /// <summary>
+    /// Planta diploide: la planta de su especie más cercana a la madre que puede dar polen. Null si no hay ninguna.
+    /// </summary>
+    Creature? PollenDonor(Creature mother)
+    {
+        var cfg = mother.Def.Config.Diploid!;
+        return NearestPlant(mother.X, mother.Y, ownSpecies[mother.Species], cfg.PollenTiles * Map.TileSize,
+            p => p != mother && p.PlantSize >= cfg.MinDonorSize);
+    }
+
     Vec2[] InheritGenes(SpeciesDef sp, Creature parent, Creature? other)
     {
         var result = new Vec2[Genes.Count];
@@ -375,8 +494,30 @@ public sealed class Simulation
     void SpawnSeed(Creature parent, double x, double y, SeedOrigin origin, double speedFactor = 1)
     {
         var sp = parent.Def;
-        var genes = InheritGenes(sp, parent, null);
-        var seed = CreateCreature(sp, x, y, parent.Angle, genes, parent.Generation + 1, parent, null);
+        Creature? father = null;
+        Allele[]? alleles = null;
+        Vec2[] genes;
+        if (sp.Config.Diploid is { } dip)
+        {
+            father = PollenDonor(parent);
+            if (father == null)
+            {
+                if (!dip.Selfing)
+                {
+                    Stats.Unpollinated[sp.Index]++;
+                    return; // sin polen no hay semilla
+                }
+                father = parent;
+                Stats.Selfed[sp.Index]++;
+            }
+            genes = InheritAlleles(sp, parent, father, out alleles);
+        }
+        else
+        {
+            genes = InheritGenes(sp, parent, null);
+        }
+        var seed = CreateCreature(sp, x, y, parent.Angle, genes, parent.Generation + 1, parent, father);
+        seed.Alleles = alleles;
         seed.Origin = origin;
         seed.SeedSpeedFactor = speedFactor;
         seed.Z = Map.GroundLevel(seed.X, seed.Y) + SpawnHeightAboveGround;
@@ -540,8 +681,12 @@ public sealed class Simulation
 
     Creature SpawnBaby(Creature a, Creature b, SpeciesDef sp, double food, double water)
     {
-        var genes = InheritGenes(sp, a, sp.Config.Inheritance == Inheritance.Blend ? b : null);
+        Allele[]? alleles = null;
+        var genes = sp.Config.Diploid != null
+            ? InheritAlleles(sp, a, b, out alleles)
+            : InheritGenes(sp, a, sp.Config.Inheritance == Inheritance.Blend ? b : null);
         var baby = CreateCreature(sp, a.X, a.Y, a.Angle, genes, a.Generation + 1, a, b);
+        baby.Alleles = alleles;
         baby.Z = Map.GroundLevel(baby.X, baby.Y) + SpawnHeightAboveGround;
         Burst(baby, rng.Angle());
         baby.Needs[Need.Food] = food;
@@ -568,6 +713,8 @@ public sealed class Simulation
         c.Dead = true;
         c.CauseOfDeath = cause;
         alive[c.Species]--;
+        if (c.Burrow != null) LeaveBurrow(c);
+        if (c.CoverPlant != null) LeaveCover(c); // si muere una planta con escondidos, ellos la sueltan al notarlo
         if (c.IsPlant)
         {
             plantsPerTile[c.TileX, c.TileY]--;
@@ -606,6 +753,12 @@ public sealed class Simulation
             c.TooCrowdedToBreed = CountNearby(c, t.RadiusTiles * Map.TileSize) > maxRivals;
         int skip = (IsDigesting(c) || IsHuntCooldown(c) ? 1 << Need.Food : 0) | (c.TooCrowdedToBreed ? 1 << Need.Mate : 0);
         int next = ArgMin(c.Needs, skip);
+        if (next != Need.Safety)
+        {
+            // El peligro ya no es lo más urgente: sale de donde estaba escondido.
+            if (c.Burrow != null) LeaveBurrow(c);
+            if (c.CoverPlant != null) LeaveCover(c);
+        }
         if (IsBucketTick(c) || next != c.TopNeed) Search(c, next);
         Pathfind(c, next);
         c.TopNeed = next;
@@ -681,7 +834,25 @@ public sealed class Simulation
                 SetTarget(c, FindNearest(c, ownSpecies[c.Species], requireEdible: false, mateRangePx[c.Species]));
                 break;
             case Need.Safety:
-                if (refuges[c.Species] is { Table: { } table, Config.FleeToRefuge: true })
+                // Dónde esconderse, en orden: su madriguera, una planta grande cerca, su zona de refugio; si no, huye.
+                // Esconderse en una planta solo sirve si el depredador todavía no lo puede ver ahí: si ya está a
+                // cover.visibleTiles o menos, sale arrancando (si no, se quedaría quieto al lado del que lo caza).
+                bool coverUseful = c.Def.Config.Cover is { } cover &&
+                    (c.Predator == null || Map.LoopDistance(c.X, c.Y, c.Predator.X, c.Predator.Y) > cover.VisibleTiles * Map.TileSize);
+                if (c.CoverPlant != null && (!coverUseful || !CoverStillThere(c))) LeaveCover(c);
+                if (c.Burrow != null || (c.CoverPlant == null && burrows[c.Species] != null && ClaimBurrow(c) != null))
+                {
+                    c.TargetKind = TargetKind.Refuge;
+                    c.TargetCreature = null;
+                    c.TargetPoint = new Vec2(c.Burrow!.X, c.Burrow.Y);
+                }
+                else if (coverUseful && (c.CoverPlant != null || ClaimCover(c) != null))
+                {
+                    c.TargetKind = TargetKind.Refuge;
+                    c.TargetCreature = null;
+                    c.TargetPoint = new Vec2(c.CoverPlant!.X, c.CoverPlant.Y);
+                }
+                else if (refuges[c.Species] is { Table: { } table, Config.FleeToRefuge: true })
                 {
                     c.TargetKind = TargetKind.Refuge;
                     c.TargetCreature = null;
@@ -697,6 +868,98 @@ public sealed class Simulation
                 break;
             // Need.Rest: se mantiene el objetivo anterior (como el original); dormido no se mueve.
         }
+    }
+
+    /// <summary>Reclama la madriguera con cupo más cercana a menos de searchTiles. Null si no hay ninguna.</summary>
+    Burrow? ClaimBurrow(Creature c)
+    {
+        double best = c.Def.Config.Burrows!.SearchTiles * Map.TileSize;
+        Burrow? result = null;
+        foreach (var b in burrows[c.Species]!)
+        {
+            if (!b.HasRoom) continue;
+            double d = Map.LoopDistance(c.X, c.Y, b.X, b.Y);
+            if (d < best)
+            {
+                best = d;
+                result = b;
+            }
+        }
+        if (result != null)
+        {
+            result.Claims++;
+            c.Burrow = result;
+        }
+        return result;
+    }
+
+    static void LeaveBurrow(Creature c)
+    {
+        c.Burrow!.Claims--;
+        c.Burrow = null;
+    }
+
+    /// <summary>Reclama la planta grande con cupo más cercana a menos de cover.searchTiles. Null si no hay ninguna.</summary>
+    Creature? ClaimCover(Creature c)
+    {
+        var cfg = c.Def.Config.Cover!;
+        var result = NearestPlant(c.X, c.Y, plantSpecies, cfg.SearchTiles * Map.TileSize,
+            p => p.PlantSize >= cfg.MinPlantSize && p.CoverClaims < cfg.Capacity);
+        if (result != null)
+        {
+            result.CoverClaims++;
+            c.CoverPlant = result;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// La planta establecida (viva y en el suelo) más cercana a (x, y), a menos de <paramref name="range"/> px,
+    /// de las especies dadas y que cumpla <paramref name="ok"/>. Revisa anillos de celdas como <see cref="FindNearest"/>.
+    /// </summary>
+    Creature? NearestPlant(double x, double y, int[] speciesList, double range, Func<Creature, bool> ok)
+    {
+        double best = range;
+        Creature? result = null;
+        int rings = grid.RingsFor(range);
+        if (rings < 0)
+        {
+            cellBuffer.Clear();
+            for (int i = 0; i < grid.CellCount; i++) cellBuffer.Add(i);
+            ScanPlants(x, y, speciesList, ok, ref best, ref result);
+            return result;
+        }
+        for (int r = 0; r <= rings; r++)
+        {
+            if ((r - 1) * grid.CellSize >= best) break;
+            grid.CollectRing(x, y, r, cellBuffer);
+            ScanPlants(x, y, speciesList, ok, ref best, ref result);
+        }
+        return result;
+    }
+
+    void ScanPlants(double x, double y, int[] speciesList, Func<Creature, bool> ok, ref double best, ref Creature? result)
+    {
+        foreach (int s in speciesList)
+        {
+            foreach (int cell in cellBuffer)
+            {
+                foreach (var p in grid.Cell(s, cell))
+                {
+                    if (p.Dead || !p.Landed) continue;
+                    double d = Map.LoopDistance(x, y, p.X, p.Y);
+                    if (d >= best || !ok(p)) continue;
+                    best = d;
+                    result = p;
+                }
+            }
+        }
+    }
+
+    static void LeaveCover(Creature c)
+    {
+        c.CoverPlant!.CoverClaims--;
+        c.CoverPlant = null;
     }
 
     static void SetTarget(Creature c, Creature? target)
@@ -743,6 +1006,7 @@ public sealed class Simulation
                     if (other == self || other.Dead) continue;
                     double d = Map.LoopDistance(self.X, self.Y, other.X, other.Y);
                     if (d >= best) continue;
+                    if (requireEdible && HiddenFrom(other, d)) continue; // escondido en una planta: no lo ve
                     if (requireEdible && BestMeal(self, other, out _) == MealKind.None) continue;
                     best = d;
                     result = other;
@@ -769,6 +1033,11 @@ public sealed class Simulation
     void Pathfind(Creature c, int need)
     {
         var m = Config.Movement;
+        if (need == Need.Safety && (InBurrow(c) || InCover(c)))
+        {
+            c.Intent = Intent.None; // escondido: se queda quieto mientras dure el peligro
+            return;
+        }
         if (c.TargetKind == TargetKind.None)
         {
             // Con hambre, sed o ganas de pareja pero sin objetivo a la vista: deambular.

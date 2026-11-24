@@ -1,0 +1,25 @@
+// ¿Qué cambia la genética diploide (dos alelos por gen, uno dominante y otro oculto)?
+// Base: ecosistema.json (lo que mejor funciona: dispersión, dieta, refugio en el agua y madrigueras).
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/diploide.json
+//
+// Con alelos ocultos, un color que no se expresa no lo ve la selección: puede derivar lejos y reaparecer cuando
+// se cruzan dos portadores. En las plantas además hace falta polen de una vecina (a menos de 3 casillas);
+// sin vecina se autopolinizan.
+//
+// Resultado: (pendiente)
+{
+  "base": "../ecosistema.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    "plantas": {
+      "species": [ { "name": "planta", "diploid": {} } ]
+    },
+    "herbivoros": {
+      "species": [ { "name": "herbivoro", "diploid": {} } ]
+    }
+  }
+}

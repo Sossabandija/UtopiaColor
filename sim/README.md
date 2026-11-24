@@ -14,7 +14,7 @@ sim/
   configs/               original.json (reproduce el original), etapa.json (gen de etapa preferida),
                          etapa_refugio.json (etapa + refugio parcial de las plantas adultas),
                          dispersion.json (etapa_refugio + fruto, viento y abrojo + dieta de los herbívoros),
-                         ecosistema.json (dispersion + refugio de los herbívoros en el agua: lo que mejor funciona)
+                         ecosistema.json (dispersion + refugio de los herbívoros en el agua y en madrigueras: lo que mejor funciona)
     experimentos/        comparaciones de mecanismos (--compare)
   UtopiaSim.Core/
     Simulation.cs        el tick: necesidades → buscar objetivo → moverse → comer/beber/aparearse
@@ -69,7 +69,7 @@ Medir no cambia la corrida: las métricas no consumen números aleatorios, y hay
 |---|---|
 | `{especie}_pop` | población |
 | `{especie}_births_per_day`, `{especie}_deaths_{causa}_per_day` | nacimientos y muertes por día en el intervalo. Causas: `starved` hambre, `dehydrated` sed, `eaten` comido, `crowded` semilla que cayó en una casilla llena, `seedling` brote que murió antes de establecerse |
-| `{comedor}_food_visible` | presas que ve, en promedio, cada individuo (dentro de su visión) |
+| `{comedor}_food_visible` | presas que ve, en promedio, cada individuo (dentro de su visión; con cobertura, sin contar las escondidas en plantas más allá de `visibleTiles`) |
 | `{comedor}_food_right_stage` | de esas, las que tienen el tamaño o peso justo: las podría comer si su color coincidiera |
 | `{comedor}_food_edible` | las que de verdad puede comer |
 | `{comedor}_food_color_dist` | distancia de color promedio a las presas que ve |
@@ -77,7 +77,11 @@ Medir no cambia la corrida: las métricas no consumen números aleatorios, y hay
 | `{especie}_{gen}_{esquina}` | polígonos de 3 o más lados: peso de cada esquina en el centro de la especie (con `vertexNames`, por ejemplo `planta_dispersion_fruto`) |
 | `{planta}_seeds_parent/_wind/_gut/_burr_per_day` | con dispersión: semillas soltadas por día según cómo llegaron (cayeron de la madre, viento, salieron de un estómago, cayeron de un abrojo) |
 | `{planta}_seeds_digested`, `_fruits_eaten`, `_fruits_fallen`, `_burrs_attached`, `_burrs_fallen` (`_per_day`) | semillas destruidas en estómagos, frutos comidos o caídos sin comer, abrojos pegados a un animal o caídos |
-| `{especie}_in_refuge` | con refugio: fracción de la especie que está en su refugio |
+| `{especie}_in_refuge` | con refugio, madrigueras o cobertura: fracción de la especie que está a salvo (en su zona de refugio o dentro de una madriguera) |
+| `{especie}_in_burrow`, `_burrow_use` | con madrigueras: fracción de la especie dentro de una madriguera, y fracción del cupo total reclamada (dentro o en camino) |
+| `{especie}_in_cover` | con cobertura: fracción de la especie escondida en una planta grande |
+| `{especie}_{gen}_hidden_spread`, `_allele_gap` | genética diploide: distancia promedio del alelo oculto al centro de lo que se expresa (compárese con `_spread`) y distancia promedio entre los dos alelos de cada individuo |
+| `{planta}_selfed_per_day`, `_unpollinated_per_day` | plantas diploides: semillas autopolinizadas por falta de vecina, y semillas que no se formaron (con `selfing: false`) |
 | `{especie}_hunts_failed_per_day` | con territorio: cazas fallidas por rivales cerca |
 
 Para separar las causas del hambre: si `right_stage` es bajo, falla el tamaño; si `right_stage` es alto pero `edible` es bajo, falla el color.
@@ -112,6 +116,8 @@ Todos vienen apagados: sin ellos, la simulación es exactamente el original.
 | **Saciedad** | `digestDays` (especie animal) | Después de comer, no busca comida durante `digestDays` × calorías de esa comida. El hambre sigue corriendo. |
 | **Pareja a distancia** | `mateRangeTiles` (especie animal) | Hasta qué distancia encuentra pareja. Por defecto es la visión (`movement.visionTiles`). |
 | **Refugio** | `refuge` (especie presa) | Mientras la presa está donde el suelo tiene una altura entre `minHeight` y `maxHeight` (0 lo más bajo del mapa, 1 lo más alto), nadie se la puede comer. El agua llega a ≈ 0.3 con la configuración original: `{ "maxHeight": 0.3 }` es el agua y `{ "minHeight": 0.7 }` los cerros. Con `fleeToRefuge` (por defecto sí), al huir corre al punto de refugio más cercano. |
+| **Madrigueras** | `burrows` (especie presa) | `count` sitios fijos en tierra seca, repartidos al azar con la semilla y separados al menos `minSpacingTiles`, donde caben `capacity` individuos cada uno. Al sentirse amenazado corre a la madriguera con cupo más cercana a menos de `searchTiles` y la reclama (el cupo cuenta a los que van en camino); si no hay ninguna, huye como siempre. Dentro (a menos de `enterTiles` del centro) nadie se lo puede comer. Sale cuando otra necesidad pesa más que el miedo. A diferencia del refugio, protege a un número fijo: con muchos herbívoros casi todos quedan afuera; con pocos caben todos. `minHeight`/`maxHeight` limitan dónde se cavan. Se reparten con su propio generador: activarlas no cambia el mapa ni la población inicial. |
+| **Cobertura** | `cover` (especie presa) | Las plantas de tamaño ≥ `minPlantSize` esconden hasta `capacity` animales cada una. Al sentirse amenazado, si no consiguió madriguera y el depredador todavía está a más de `visibleTiles`, corre a la planta grande con cupo más cercana a menos de `searchTiles`; si el depredador ya está a `visibleTiles` o menos, esconderse no sirve y sale arrancando. Escondido (a menos de `enterTiles` de la planta) se queda quieto y un cazador solo lo ve a `visibleTiles` o menos, en vez de a toda su visión. No es invulnerable: si el cazador se acerca, lo caza igual. Si se comen la planta o se achica, queda al descubierto. Orden al huir: madriguera, planta, zona de refugio; si no hay ninguna, se aleja del depredador. En `experimentos/cobertura.json` no ayudó en ninguna combinación: reemplaza al agua, que protege más, y al arranque deja a los carnívoros sin presas a la vista. |
 | **Territorio** | `territory` (especie animal) | Rivales = otros de su especie a menos de `radiusTiles`. Con `maxRivalsToBreed`, si tiene más rivales que eso cerca no cría (se revisa cada 20 ticks). Con `interference` > 0, al alcanzar a una presa la caza resulta con probabilidad 1 / (1 + interference × (rivales − tolerance)); si falla, la presa escapa y espera `failCooldownDays`. Ojo: en las pruebas, la interferencia en la caza mató de hambre a los carnívoros, porque se juntan donde están las presas. |
 
 ## Dispersión de semillas (gen triangular)
@@ -174,6 +180,9 @@ Experimentos incluidos:
 - `refugio_adultas.json`: los mismos mecanismos más "adultas", donde la planta baja a 0.75 al soltar semilla en vez de 0.5 y queda fuera de la ventana comestible. Con el refugio, la saciedad y la pareja a distancia sí ayudan.
 - `dispersion.json`: sobre `etapa_refugio.json`, cada modo de dispersión (viento, fruto, abrojo) por separado y combinados.
 - `depredadores.json`: sobre `dispersion.json`, refugio de los herbívoros en el agua y territorio de cría de los carnívoros.
+- `madrigueras.json`: sobre `dispersion.json`, refugio en el agua contra madrigueras con cupo (30 de 2 lugares).
+- `cobertura.json`: sobre `dispersion.json`, todas las combinaciones de agua, madrigueras y cobertura en plantas grandes.
+- `diploide.json`: sobre `ecosistema.json`, genética diploide en las plantas, en los herbívoros y en ambos.
 - `refugio_etapa.json`: el refugio de las adultas, pero con el gen de etapa (`etapa.json`): un herbívoro que evolucione hacia "tardío" sí puede comérselas. Incluye "lenta", que hace mutar más lento el gen de etapa de los herbívoros.
 
 Cada mecanismo es un parche, con las mismas reglas que `extends`.
@@ -219,6 +228,18 @@ Cada especie define con qué valor parte cada gen (`initialGenes`) y cuánto mut
 ### Gen de etapa preferida
 
 Si una especie tiene `"preferredStageGene": "etapa"`, el centro de su ventana de comida deja de ser 0.5 fijo y pasa a ser su gen: 0 = prefiere plantas recién nacidas o presas flacas, 1 = plantas grandes o presas gordas. Con las reglas actuales "tardío" da más calorías y no tiene costo, así que hace falta agregar una contrapartida para que la elección sea interesante.
+
+### Genética diploide (alelos recesivos)
+
+Con `"diploid": {}` en una especie, cada gen tiene **dos alelos**, uno de la madre y otro del padre, y cada alelo tiene una **dominancia** de 0 a 1. Se expresa el alelo más dominante; si dominan igual, el punto medio. El otro queda **oculto**: la selección no lo ve (los herbívoros eligen por el color que se expresa), así que puede derivar lejos y reaparecer cuando se cruzan dos portadores.
+
+- Al nacer, cada padre pasa uno de sus dos alelos al azar. El valor muta como siempre (`mutation`) y la dominancia cambia hasta ± `dominanceStep` (0.05).
+- En la población inicial, el primer alelo es el sorteo de siempre, el segundo otro sorteo alrededor de `initialGenes`, y las dominancias son al azar.
+- **Animales**: ya se aparean de a dos; `diploid` reemplaza a `inheritance`.
+- **Plantas**: se vuelven sexuales. Al formarse cada semilla, el padre es la planta de su especie más cercana a la madre, a menos de `pollenTiles` (3) y de tamaño ≥ `minDonorSize` (0.5). Sin vecina se autopoliniza (`selfing`, por defecto sí); con `"selfing": false` la semilla no se forma (efecto Allee).
+- Usa su propio generador al azar: activarlo no cambia el mapa ni las posiciones iniciales.
+
+En el visor, los alelos ocultos aparecen como puntos tenues en el panel de genes, y la ficha muestra el alelo oculto de cada gen.
 
 ## Diferencias con el original de Processing
 

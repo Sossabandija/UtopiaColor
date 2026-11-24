@@ -9,6 +9,8 @@ public sealed class SimStats
         Deaths = new long[speciesCount, Enum.GetValues<DeathCause>().Length];
         Dispersal = new long[speciesCount, Enum.GetValues<DispersalCounter>().Length];
         HuntsFailed = new long[speciesCount];
+        Selfed = new long[speciesCount];
+        Unpollinated = new long[speciesCount];
     }
 
     /// <summary>Nacimientos por especie (semillas y crías; no cuenta la población inicial).</summary>
@@ -22,6 +24,12 @@ public sealed class SimStats
 
     /// <summary>Cazas fallidas por rivales cerca (territorialidad), por especie del cazador.</summary>
     public long[] HuntsFailed { get; }
+
+    /// <summary>Plantas diploides: semillas autopolinizadas (no había vecina que diera polen).</summary>
+    public long[] Selfed { get; }
+
+    /// <summary>Plantas diploides sin autopolinización: semillas que no se formaron por falta de polen.</summary>
+    public long[] Unpollinated { get; }
 }
 
 /// <summary>

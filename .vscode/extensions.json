@@ -1,0 +1,4 @@
+{
+  // Necesaria para depurar con F5 (trae el depurador de C#).
+  "recommendations": ["ms-dotnettools.csharp"]
+}

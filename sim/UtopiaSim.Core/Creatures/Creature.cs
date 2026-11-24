@@ -17,8 +17,14 @@ public sealed class Creature
     public int Species => Def.Index;
     public bool IsPlant => Def.IsPlant;
 
-    /// <summary>Valor de cada gen (índice = <see cref="GeneDef.Index"/>).</summary>
+    /// <summary>Valor de cada gen (índice = <see cref="GeneDef.Index"/>). Con genética diploide, el valor que se expresa.</summary>
     public Vec2[] Genes { get; }
+
+    /// <summary>
+    /// Con genética diploide: los dos alelos de cada gen, en [2 × gen] (de la madre) y [2 × gen + 1] (del padre).
+    /// Null si la especie no es diploide.
+    /// </summary>
+    public Allele[]? Alleles { get; internal set; }
 
     // --- Estado físico (unidades del original: px y px/tick) ---
     public double X { get; internal set; }
@@ -82,6 +88,12 @@ public sealed class Creature
     public long HuntCooldownUntil { get; internal set; } = long.MinValue;
     /// <summary>Con territorialidad de cría: hay demasiados rivales cerca para buscar pareja (se revisa cada tickBucketCount ticks).</summary>
     public bool TooCrowdedToBreed { get; internal set; }
+    /// <summary>Con madrigueras: la que reclamó al huir (está dentro o va hacia ella). Null = ninguna.</summary>
+    public Burrow? Burrow { get; internal set; }
+    /// <summary>Con cobertura: la planta grande que reclamó para esconderse (está en ella o va hacia ella). Null = ninguna.</summary>
+    public Creature? CoverPlant { get; internal set; }
+    /// <summary>Planta: cuántos animales la reclamaron para esconderse.</summary>
+    public int CoverClaims { get; internal set; }
     public long LastSeedTick { get; internal set; } = long.MinValue;
 
     // Casilla donde se cuenta (solo plantas, para el límite por casilla).

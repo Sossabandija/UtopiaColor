@@ -477,8 +477,22 @@ public partial class Main : Node
         var withRefuge = s.Species.Where(sp => s.HasRefuge(sp.Index)).ToList();
         if (withRefuge.Count > 0)
         {
+            // Con madrigueras se agregan qué parte está dentro de una y qué parte del cupo está reclamada (dentro o en camino).
+            // Con cobertura, qué parte está escondida en una planta (no cuenta como "a salvo": ahí se la puede cazar de cerca).
             chartDefs.Add(("Presas en su refugio (%)", () => chart.SetData(metricsHistory.Days,
-                withRefuge.Select(sp => Curve(sp.Name, Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.inRefuge"))).ToList(),
+                withRefuge.SelectMany(sp =>
+                {
+                    var color = Palette.ForSpecies(sp.Index);
+                    var curves = new List<ChartSeries> { Curve(s.HasBurrows(sp.Index) || s.HasCover(sp.Index) ? $"{sp.Name} a salvo" : sp.Name, color, metricsHistory.Get($"{sp.Name}.inRefuge")) };
+                    if (s.HasBurrows(sp.Index))
+                    {
+                        curves.Add(Curve($"{sp.Name} en madriguera", color.Darkened(0.35f), metricsHistory.Get($"{sp.Name}.inBurrow")));
+                        curves.Add(Curve("cupo usado", Palette.BurrowRim, metricsHistory.Get($"{sp.Name}.burrowUse")));
+                    }
+                    if (s.HasCover(sp.Index))
+                        curves.Add(Curve($"{sp.Name} en plantas", new Color(0.45f, 0.80f, 0.45f), metricsHistory.Get($"{sp.Name}.inCover")));
+                    return curves;
+                }).ToList(),
                 max: 100, logAllowed: false)));
         }
 
@@ -536,6 +550,19 @@ public partial class Main : Node
                 s.Species.Where(sp => s.PreySpeciesOf(sp.Index).Count > 0)
                     .Select(sp => Curve(sp.Name, Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.food.colorDistance"))).ToList(),
                 logAllowed: false)));
+
+            // Genética diploide: qué tan lejos del color de la especie están, en promedio, lo expresado y los alelos ocultos.
+            var diploid = s.Species.Where(sp => sp.Config.Diploid != null).ToList();
+            if (diploid.Count > 0)
+            {
+                chartDefs.Add(("Variación de color: expresada y oculta", () => chart.SetData(metricsHistory.Days,
+                    diploid.SelectMany(sp => new[]
+                    {
+                        Curve($"{sp.Name} expresada", Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.colorSpread")),
+                        Curve($"{sp.Name} oculta", Palette.ForSpecies(sp.Index).Darkened(0.45f), metricsHistory.Get($"{sp.Name}.colorHidden")),
+                    }).ToList(),
+                    logAllowed: false)));
+            }
         }
 
         chartPicker.Clear();
@@ -582,8 +609,10 @@ public partial class Main : Node
             BoundaryRule.Reflect => "borde que rebota (neutral)",
             _ => "borde pegajoso (atrapa en las esquinas)",
         };
+        var diploid = sim.Species.Where(sp => sp.Config.Diploid != null).Select(sp => sp.Name).ToList();
         geneInfo.Text = $"{g.Name}: {ShapeName(g)}, {rule}. " +
-                        (mutating.Count > 0 ? $"Muta en: {string.Join(", ", mutating)}." : "No muta en ninguna especie.");
+                        (mutating.Count > 0 ? $"Muta en: {string.Join(", ", mutating)}." : "No muta en ninguna especie.") +
+                        (diploid.Count > 0 ? $" Puntos tenues: alelos ocultos ({string.Join(", ", diploid)})." : "");
     }
 
     void ShowError(string? message)

@@ -22,6 +22,7 @@ public sealed class SpeciesDef
             if (config.PreferredStageGene == g.Name) StageGeneIndex = g.Index;
             if (config.DietGene == g.Name) DietGeneIndex = g.Index;
             if (Plant.Dispersal?.Gene == g.Name) DispersalGeneIndex = g.Index;
+            if (config.Burrows is { MaxColorDistance: not null } b && b.ColorGene == g.Name) BurrowColorGeneIndex = g.Index;
         }
         Mutation = mutation;
         InitialGenes = initial;
@@ -46,4 +47,7 @@ public sealed class SpeciesDef
 
     /// <summary>Solo plantas: índice del gen triangular de dispersión, o -1 si no tiene.</summary>
     public int DispersalGeneIndex { get; } = -1;
+
+    /// <summary>Madrigueras de un solo color: índice del gen que decide quién entra, o -1 si entra cualquiera.</summary>
+    public int BurrowColorGeneIndex { get; } = -1;
 }

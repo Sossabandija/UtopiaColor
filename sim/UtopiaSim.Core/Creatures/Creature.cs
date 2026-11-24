@@ -90,6 +90,11 @@ public sealed class Creature
     public bool TooCrowdedToBreed { get; internal set; }
     /// <summary>Con madrigueras: la que reclamó al huir (está dentro o va hacia ella). Null = ninguna.</summary>
     public Burrow? Burrow { get; internal set; }
+    /// <summary>Cavando una madriguera (dormido o al huir): ticks que lleva (0 = no está cavando).</summary>
+    public int DigTicks { get; internal set; }
+    /// <summary>Se detuvo a cavar una madriguera de emergencia mientras huye (burrows.dig.fleeDigDays).</summary>
+    public bool FleeDigging { get; internal set; }
+    internal double DigX, DigY;
     /// <summary>Con cobertura: la planta grande que reclamó para esconderse (está en ella o va hacia ella). Null = ninguna.</summary>
     public Creature? CoverPlant { get; internal set; }
     /// <summary>Planta: cuántos animales la reclamaron para esconderse.</summary>

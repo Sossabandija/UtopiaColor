@@ -28,6 +28,8 @@ public sealed class Simulation
     readonly Rng rng;
     readonly SpatialGrid grid;
     readonly int[,] plantsPerTile;
+    readonly int[,] tileSlotsTaken; // plantas que no caben en cada casilla porque hay una madriguera (burrows.plantSlots)
+    readonly int[,] tileTilled;     // plantas extra que caben en cada casilla por tierra revuelta (burrows.collapse.tilledSlots)
     readonly bool[,] canEatSpecies; // [comedor, comida]
     readonly int[][] foodSpecies;
     readonly int[][] predatorSpecies;
@@ -40,7 +42,12 @@ public sealed class Simulation
     readonly int[] burrSpecies;    // plantas que pueden tener abrojos
     // Por especie: su refugio y, para cada vértice del mapa, el vértice de refugio más cercano (null si no hay).
     readonly ((int X, int Y)[,]? Table, RefugeConfig? Config)[] refuges;
-    readonly Burrow[]?[] burrows;  // por especie: sus madrigueras (null si no tiene)
+    readonly List<Burrow>?[] burrows; // por especie: sus madrigueras (null si no tiene)
+    readonly List<Burrow> allBurrows = [];
+    readonly List<Ruin>?[] ruins;     // por especie: ruinas que todavía impiden cavar cerca (null si no deja ruinas)
+    readonly bool burrowsChange;      // alguna madriguera se puede derrumbar (por abandono o por el tiempo)
+    readonly Rng burrowRng;           // cuánto dura cada madriguera: su propio generador, para no cambiar el resto
+    readonly long[] arrivalTick;      // por especie: tick en que llega su población inicial (0 = desde el comienzo)
     readonly int[] plantSpecies;   // dónde buscar cobertura
     readonly Rng geneticsRng;      // genética diploide: su propio generador, para que activarla no cambie la población inicial
     readonly List<int> touchCells = [];
@@ -87,6 +94,8 @@ public sealed class Simulation
         Map = new WorldMap(config.World, rng);
         grid = new SpatialGrid(Map.Width, Math.Max(1, config.World.Size / 2), s);
         plantsPerTile = new int[Map.Size, Map.Size];
+        tileSlotsTaken = new int[Map.Size, Map.Size];
+        tileTilled = new int[Map.Size, Map.Size];
         alive = new int[s];
         Stats = new SimStats(s);
         visionPx = config.Movement.VisionTiles * Map.TileSize;
@@ -100,8 +109,11 @@ public sealed class Simulation
             refuges[sp.Index] = (Map.ClosestVertices((x, y) => InHeightRange(Map.Elevation(x, y) / ef, r)), r);
         }
         plantSpecies = species.Where(sp => sp.IsPlant).Select(sp => sp.Index).ToArray();
+        burrowRng = new Rng(Seed ^ 0x646572727562656DUL); // "derrubem"
+        ruins = species.Select(sp => sp.Config.Burrows?.Collapse is { RuinDays: > 0 } ? new List<Ruin>() : null).ToArray();
         burrows = PlaceBurrows();
-        Burrows = burrows.Where(b => b != null).SelectMany(b => b!).ToArray();
+        burrowsChange = species.Any(sp => sp.Config.Burrows is { } b && (b.Dig?.AbandonDays != null || b.Collapse?.HalfLifeDays != null));
+        arrivalTick = species.Select(sp => (long)Math.Round(sp.Config.ArrivalDay * config.World.TicksPerDay)).ToArray();
         daylight = ComputeDaylight(0);
 
         SpawnInitialPopulation();
@@ -121,8 +133,8 @@ public sealed class Simulation
     public double Daylight => daylight;
     /// <summary>Todos los seres vivos (después de cada <see cref="Step"/> no quedan muertos aquí).</summary>
     public IReadOnlyList<Creature> Creatures => creatures;
-    /// <summary>Todas las madrigueras del mapa, de todas las especies (no cambian durante la corrida).</summary>
-    public IReadOnlyList<Burrow> Burrows { get; }
+    /// <summary>Todas las madrigueras del mapa, de todas las especies (con dig, aparecen y se derrumban).</summary>
+    public IReadOnlyList<Burrow> Burrows => allBurrows;
 
     /// <summary>Se dispara en cada nacimiento, muerte, comida, trago y apareamiento. Null = sin costo.</summary>
     public event Action<SimEvent>? EventRaised;
@@ -175,6 +187,8 @@ public sealed class Simulation
     {
         Tick++;
         daylight = ComputeDaylight(Tick);
+        foreach (var sp in Species)
+            if (arrivalTick[sp.Index] == Tick) SpawnPopulation(sp); // llega una especie que empezaba más tarde
         grid.Rebuild(creatures);
         gridFresh = true;
 
@@ -193,6 +207,7 @@ public sealed class Simulation
         }
 
         RemoveDead();
+        if (burrowsChange) UpdateBurrows();
         gridFresh = false; // todos se movieron
     }
 
@@ -309,6 +324,19 @@ public sealed class Simulation
     /// <summary>¿Tiene madrigueras esta especie?</summary>
     public bool HasBurrows(int species) => burrows[species] != null;
 
+    /// <summary>
+    /// Cuántas plantas caben en la casilla (tx, ty): world.maxPlantsPerTile, menos las que quita una madriguera (plantSlots),
+    /// más las que agrega la tierra revuelta de las que se derrumbaron ahí (collapse.tilledSlots).
+    /// </summary>
+    public int PlantCapacity(int tx, int ty) =>
+        Math.Max(0, Config.World.MaxPlantsPerTile - tileSlotsTaken[tx, ty] + tileTilled[tx, ty]);
+
+    /// <summary>Plantas extra que caben en la casilla (tx, ty) por tierra revuelta.</summary>
+    public int TilledSlots(int tx, int ty) => tileTilled[tx, ty];
+
+    /// <summary>Ruinas de madrigueras de una especie que todavía impiden cavar cerca.</summary>
+    public IReadOnlyList<Ruin> RuinsOf(int species) => ruins[species] ?? (IReadOnlyList<Ruin>)[];
+
     /// <summary>¿Se esconde esta especie en plantas grandes?</summary>
     public bool HasCover(int species) => Species[species].Config.Cover != null;
 
@@ -334,55 +362,253 @@ public sealed class Simulation
     /// Usa su propio generador (derivado de la semilla) para que activarlas no cambie la población inicial:
     /// así una comparación con y sin madrigueras parte igual.
     /// </summary>
-    Burrow[]?[] PlaceBurrows()
+    List<Burrow>?[] PlaceBurrows()
     {
-        var result = new Burrow[]?[Species.Count];
+        var result = new List<Burrow>?[Species.Count];
         var placeRng = new Rng(Seed ^ 0x6D61647269677561UL); // "madrigua"
         foreach (var sp in Species)
         {
             if (sp.Config.Burrows is not { } cfg) continue;
             var list = new List<Burrow>();
-            double spacing = cfg.MinSpacingTiles * Map.TileSize;
             for (int attempt = 0; attempt < 1000 * cfg.Count && list.Count < cfg.Count; attempt++)
             {
                 double x = placeRng.NextDouble() * Map.Width, y = placeRng.NextDouble() * Map.Width;
-                double h = Map.NormalizedHeight(x, y);
-                if (Map.GroundLevel(x, y) <= Map.WaterLevelPx || h < cfg.MinHeight || h > cfg.MaxHeight) continue;
-                if (list.Any(b => Map.LoopDistance(x, y, b.X, b.Y) < spacing)) continue;
-                list.Add(new Burrow(sp.Index, x, y, cfg.Capacity));
+                if (BurrowSiteOk(sp.Index, cfg, list, x, y)) AddBurrow(list, new Burrow(sp.Index, x, y, cfg.Capacity));
             }
-            result[sp.Index] = list.ToArray();
+            result[sp.Index] = list;
         }
         return result;
     }
 
+    /// <summary>
+    /// Agrega una madriguera al mapa; si ocupa lugar de plantas (plantSlots), su casilla admite menos.
+    /// Con collapse.halfLifeDays se sortea cuánto va a durar.
+    /// </summary>
+    void AddBurrow(List<Burrow> list, Burrow b)
+    {
+        list.Add(b);
+        allBurrows.Add(b);
+        TakePlantSlots(b, +1);
+        if (Species[b.Species].Config.Burrows!.Collapse?.HalfLifeDays is double halfLife)
+        {
+            // Vida exponencial: la probabilidad de caerse no depende de la edad, y la mitad dura menos que halfLife.
+            double days = -Math.Log(1 - burrowRng.NextDouble()) * halfLife / Math.Log(2);
+            b.CollapseTick = Tick + Math.Max(1, (long)Math.Round(days * Config.World.TicksPerDay));
+        }
+    }
+
+    /// <summary>Saca del mapa la madriguera <paramref name="index"/> de la lista de su especie (se derrumbó).</summary>
+    void RemoveBurrow(List<Burrow> list, int index)
+    {
+        var b = list[index];
+        list.RemoveAt(index);
+        allBurrows.Remove(b);
+        TakePlantSlots(b, -1);
+    }
+
+    void TakePlantSlots(Burrow b, int sign)
+    {
+        int slots = Species[b.Species].Config.Burrows!.PlantSlots;
+        if (slots == 0) return;
+        var (tx, ty) = Map.TileOf(b.X, b.Y);
+        tileSlotsTaken[tx, ty] += sign * slots;
+    }
+
+    /// <summary>
+    /// ¿Se puede hacer una madriguera en (x, y)? Tierra seca, a la altura permitida y lejos de las demás
+    /// (y de las ruinas recientes, que cuentan como si siguieran ahí).
+    /// </summary>
+    bool BurrowSiteOk(int species, BurrowConfig cfg, List<Burrow> existing, double x, double y)
+    {
+        double h = Map.NormalizedHeight(x, y);
+        if (Map.GroundLevel(x, y) <= Map.WaterLevelPx || h < cfg.MinHeight || h > cfg.MaxHeight) return false;
+        double spacing = cfg.MinSpacingTiles * Map.TileSize;
+        foreach (var b in existing)
+            if (Map.LoopDistance(x, y, b.X, b.Y) < spacing) return false;
+        if (ruins[species] is { } rs)
+            foreach (var r in rs)
+                if (Map.LoopDistance(x, y, r.X, r.Y) < spacing) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// Cava una madriguera donde está (ver <see cref="DigConfig"/>): mientras duerme o, si empezó al huir, de emergencia.
+    /// Si deja de dormir o se mueve más de media casilla, pierde lo avanzado. La de emergencia la reclama al terminarla.
+    /// </summary>
+    void Dig(Creature c, BurrowConfig cfg)
+    {
+        if (c.FleeDigging)
+        {
+            if (++c.DigTicks < FleeDigTicksNeeded(cfg)) return;
+            c.FleeDigging = false;
+            c.DigTicks = 0;
+            var own = burrows[c.Species]!;
+            if (own.Count >= cfg.Dig!.MaxCount || !BurrowSiteOk(c.Species, cfg, own, c.DigX, c.DigY)) return; // otro terminó antes
+            var dug = new Burrow(c.Species, c.DigX, c.DigY, cfg.Capacity) { Dug = true, LastUsedTick = Tick };
+            AddBurrow(own, dug);
+            Stats.BurrowsDug[c.Species]++;
+            Stats.BurrowsDugFleeing[c.Species]++;
+            Claim(c, dug);
+            c.TargetKind = TargetKind.Refuge;
+            c.TargetCreature = null;
+            c.TargetPoint = new Vec2(dug.X, dug.Y);
+            return;
+        }
+        if (c.TopNeed != Need.Rest)
+        {
+            c.DigTicks = 0;
+            return;
+        }
+        var list = burrows[c.Species]!;
+        if (c.DigTicks > 0 && Map.LoopDistance(c.X, c.Y, c.DigX, c.DigY) > 0.5 * Map.TileSize) c.DigTicks = 0;
+        if (c.DigTicks == 0)
+        {
+            // Si puede empezar se revisa cada tickBucketCount ticks: es la parte cara.
+            if (!IsBucketTick(c) || list.Count >= cfg.Dig!.MaxCount || !BurrowSiteOk(c.Species, cfg, list, c.X, c.Y)) return;
+            (c.DigX, c.DigY) = (c.X, c.Y);
+        }
+        if (++c.DigTicks < DigTicksNeeded(cfg)) return;
+        c.DigTicks = 0;
+        if (list.Count >= cfg.Dig!.MaxCount || !BurrowSiteOk(c.Species, cfg, list, c.DigX, c.DigY)) return; // otro terminó antes
+        AddBurrow(list, new Burrow(c.Species, c.DigX, c.DigY, cfg.Capacity) { Dug = true, LastUsedTick = Tick });
+        Stats.BurrowsDug[c.Species]++;
+    }
+
+    /// <summary>Ticks de sueño en el mismo lugar para terminar una madriguera.</summary>
+    public int DigTicksNeeded(BurrowConfig cfg) =>
+        Math.Max(1, (int)Math.Round(cfg.Dig!.DigDays * Config.World.TicksPerDay));
+
+    /// <summary>Ticks para cavar una madriguera de emergencia al huir (dig.fleeDigDays).</summary>
+    public int FleeDigTicksNeeded(BurrowConfig cfg) =>
+        Math.Max(1, (int)Math.Round(cfg.Dig!.FleeDigDays!.Value * Config.World.TicksPerDay));
+
+    /// <summary>Cuánto lleva de la madriguera que está cavando (0 a 1); 0 si no cava.</summary>
+    public double DigProgress(Creature c)
+    {
+        if (c.DigTicks == 0 || c.Def.Config.Burrows is not { Dig: not null } cfg) return 0;
+        return (double)c.DigTicks / (c.FleeDigging ? FleeDigTicksNeeded(cfg) : DigTicksNeeded(cfg));
+    }
+
+    /// <summary>
+    /// Al huir sin madriguera con cupo: si cava de emergencia (fleeDigDays), el depredador está lejos y ahí se puede cavar,
+    /// se detiene a cavar. Devuelve si empezó.
+    /// </summary>
+    bool StartFleeDig(Creature c)
+    {
+        if (c.Def.Config.Burrows is not { Dig: { FleeDigDays: not null } dig } cfg || !FleeDigSafe(c, dig)) return false;
+        var list = burrows[c.Species]!;
+        if (list.Count >= dig.MaxCount || !BurrowSiteOk(c.Species, cfg, list, c.X, c.Y)) return false;
+        c.FleeDigging = true;
+        c.DigTicks = 0;
+        (c.DigX, c.DigY) = (c.X, c.Y);
+        return true;
+    }
+
+    /// <summary>¿Está el depredador todavía a más de fleeSafeTiles?</summary>
+    bool FleeDigSafe(Creature c, DigConfig dig) =>
+        c.Predator == null || Map.LoopDistance(c.X, c.Y, c.Predator.X, c.Predator.Y) > dig.FleeSafeTiles * Map.TileSize;
+
+    /// <summary>¿Puede seguir cavando de emergencia? Sigue con miedo, el depredador lejos y no se ha movido.</summary>
+    bool KeepFleeDigging(Creature c, int next) =>
+        next == Need.Safety && FleeDigSafe(c, c.Def.Config.Burrows!.Dig!) &&
+        Map.LoopDistance(c.X, c.Y, c.DigX, c.DigY) <= 0.5 * Map.TileSize;
+
+    /// <summary>
+    /// Derrumba las madrigueras que nadie reclamó durante abandonDays y las que cumplieron su tiempo (collapse.halfLifeDays),
+    /// y olvida las ruinas que ya no impiden cavar.
+    /// </summary>
+    void UpdateBurrows()
+    {
+        for (int s = 0; s < burrows.Length; s++)
+        {
+            if (burrows[s] is not { } list) continue;
+            long limit = Species[s].Config.Burrows!.Dig?.AbandonDays is double days
+                ? (long)Math.Round(days * Config.World.TicksPerDay)
+                : long.MaxValue;
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var b = list[i];
+                if (Tick >= b.CollapseTick)
+                {
+                    CollapseBurrow(list, i, aged: true);
+                }
+                else if (b.Claims > 0)
+                {
+                    b.LastUsedTick = Tick;
+                }
+                else if (Tick - b.LastUsedTick > limit)
+                {
+                    CollapseBurrow(list, i, aged: false);
+                }
+            }
+            if (ruins[s] is { Count: > 0 } rs)
+                for (int i = rs.Count - 1; i >= 0; i--)
+                    if (rs[i].UntilTick <= Tick) rs.RemoveAt(i);
+        }
+    }
+
+    /// <summary>
+    /// Se cae una madriguera: salen los que estaban dentro o iban hacia ella, y (con collapse) deja una ruina y tierra revuelta.
+    /// </summary>
+    void CollapseBurrow(List<Burrow> list, int index, bool aged)
+    {
+        var b = list[index];
+        if (b.Claims > 0)
+        {
+            foreach (var c in creatures)
+            {
+                if (c.Burrow != b) continue;
+                LeaveBurrow(c);
+                SetTarget(c, c.Predator); // a la intemperie: huye hasta decidir de nuevo
+            }
+        }
+        RemoveBurrow(list, index);
+        Stats.BurrowsCollapsed[b.Species]++;
+        if (aged) Stats.BurrowsAged[b.Species]++;
+        if (Species[b.Species].Config.Burrows!.Collapse is not { } col) return;
+        if (col.RuinDays > 0)
+            ruins[b.Species]!.Add(new Ruin(b.Species, b.X, b.Y, Tick + (long)Math.Round(col.RuinDays * Config.World.TicksPerDay)));
+        if (col.TilledSlots > 0)
+        {
+            var (tx, ty) = Map.TileOf(b.X, b.Y);
+            tileTilled[tx, ty] = Math.Max(tileTilled[tx, ty], Math.Min(col.MaxTilledSlots, tileTilled[tx, ty] + col.TilledSlots));
+        }
+    }
+
+    /// <summary>¿Llegó ya la población inicial de esta especie (arrivalDay)?</summary>
+    public bool HasArrived(int species) => Tick >= arrivalTick[species];
+
     void SpawnInitialPopulation()
     {
         foreach (var sp in Species)
-        {
-            var jitter = sp.Config.InitialJitter;
-            for (int i = 0; i < sp.Config.InitialCount; i++)
-            {
-                double x = rng.Range(0, Map.Width), y = rng.Range(0, Map.Width), angle = rng.Angle();
-                var genes = new Vec2[Genes.Count];
-                for (int g = 0; g < Genes.Count; g++)
-                    genes[g] = Genes[g].Space.Mutate(sp.InitialGenes[g], rng, jitter.MaxStep, jitter.Exponent);
+            if (arrivalTick[sp.Index] == 0) SpawnPopulation(sp);
+    }
 
-                var c = CreateCreature(sp, x, y, angle, genes, generation: 0, parentA: null, parentB: null);
-                if (sp.Config.Diploid != null) InitialAlleles(sp, c);
-                c.Z = Map.GroundLevel(x, y);
-                if (sp.IsPlant)
-                {
-                    c.PlantSize = rng.NextDouble();
-                    c.Landed = true;
-                }
-                else
-                {
-                    c.Needs[Need.Food] = rng.Range(0.3333, 0.6666);
-                    c.Needs[Need.Water] = rng.Range(0.3333, 0.6666);
-                }
-                Add(c);
+    /// <summary>Los initialCount individuos de una especie, repartidos al azar (al comienzo o al llegar, con arrivalDay).</summary>
+    void SpawnPopulation(SpeciesDef sp)
+    {
+        var jitter = sp.Config.InitialJitter;
+        for (int i = 0; i < sp.Config.InitialCount; i++)
+        {
+            double x = rng.Range(0, Map.Width), y = rng.Range(0, Map.Width), angle = rng.Angle();
+            var genes = new Vec2[Genes.Count];
+            for (int g = 0; g < Genes.Count; g++)
+                genes[g] = Genes[g].Space.Mutate(sp.InitialGenes[g], rng, jitter.MaxStep, jitter.Exponent);
+
+            var c = CreateCreature(sp, x, y, angle, genes, generation: 0, parentA: null, parentB: null);
+            if (sp.Config.Diploid != null) InitialAlleles(sp, c);
+            c.Z = Map.GroundLevel(x, y);
+            if (sp.IsPlant)
+            {
+                c.PlantSize = rng.NextDouble();
+                c.Landed = true;
             }
+            else
+            {
+                c.Needs[Need.Food] = rng.Range(0.3333, 0.6666);
+                c.Needs[Need.Water] = rng.Range(0.3333, 0.6666);
+            }
+            Add(c);
         }
     }
 
@@ -759,10 +985,19 @@ public sealed class Simulation
             if (c.Burrow != null) LeaveBurrow(c);
             if (c.CoverPlant != null) LeaveCover(c);
         }
-        if (IsBucketTick(c) || next != c.TopNeed) Search(c, next);
+        bool research = false;
+        if (c.FleeDigging && !KeepFleeDigging(c, next))
+        {
+            // Pasó el miedo o el depredador se acercó: deja de cavar (pierde lo avanzado) y decide de nuevo.
+            c.FleeDigging = false;
+            c.DigTicks = 0;
+            research = true;
+        }
+        if (IsBucketTick(c) || next != c.TopNeed || research) Search(c, next);
         Pathfind(c, next);
         c.TopNeed = next;
         ApplyIntent(c);
+        if (c.Def.Config.Burrows is { Dig: not null } dig) Dig(c, dig);
     }
 
     void UpdateNeeds(Creature c)
@@ -834,17 +1069,26 @@ public sealed class Simulation
                 SetTarget(c, FindNearest(c, ownSpecies[c.Species], requireEdible: false, mateRangePx[c.Species]));
                 break;
             case Need.Safety:
-                // Dónde esconderse, en orden: su madriguera, una planta grande cerca, su zona de refugio; si no, huye.
+                // Dónde esconderse, en orden: su madriguera, cavar una (fleeDigDays), una planta grande cerca, su zona de
+                // refugio; si no, huye.
                 // Esconderse en una planta solo sirve si el depredador todavía no lo puede ver ahí: si ya está a
                 // cover.visibleTiles o menos, sale arrancando (si no, se quedaría quieto al lado del que lo caza).
                 bool coverUseful = c.Def.Config.Cover is { } cover &&
                     (c.Predator == null || Map.LoopDistance(c.X, c.Y, c.Predator.X, c.Predator.Y) > cover.VisibleTiles * Map.TileSize);
                 if (c.CoverPlant != null && (!coverUseful || !CoverStillThere(c))) LeaveCover(c);
-                if (c.Burrow != null || (c.CoverPlant == null && burrows[c.Species] != null && ClaimBurrow(c) != null))
+                if (c.FleeDigging)
+                {
+                    SetTarget(c, c.Predator); // sigue cavando; si el depredador se acerca, DoActions lo hace arrancar
+                }
+                else if (c.Burrow != null || (c.CoverPlant == null && burrows[c.Species] != null && ClaimBurrow(c) != null))
                 {
                     c.TargetKind = TargetKind.Refuge;
                     c.TargetCreature = null;
                     c.TargetPoint = new Vec2(c.Burrow!.X, c.Burrow.Y);
+                }
+                else if (c.CoverPlant == null && burrows[c.Species] != null && StartFleeDig(c))
+                {
+                    SetTarget(c, c.Predator); // se queda quieto cavando (Pathfind)
                 }
                 else if (coverUseful && (c.CoverPlant != null || ClaimCover(c) != null))
                 {
@@ -870,14 +1114,18 @@ public sealed class Simulation
         }
     }
 
-    /// <summary>Reclama la madriguera con cupo más cercana a menos de searchTiles. Null si no hay ninguna.</summary>
+    /// <summary>
+    /// Reclama la madriguera con cupo más cercana a menos de searchTiles (con maxColorDistance, solo una vacía o del color
+    /// de quienes ya la ocupan). Null si no hay ninguna.
+    /// </summary>
     Burrow? ClaimBurrow(Creature c)
     {
-        double best = c.Def.Config.Burrows!.SearchTiles * Map.TileSize;
+        var cfg = c.Def.Config.Burrows!;
+        double best = cfg.SearchTiles * Map.TileSize;
         Burrow? result = null;
         foreach (var b in burrows[c.Species]!)
         {
-            if (!b.HasRoom) continue;
+            if (!b.HasRoom || !ColorAdmitted(c, b, cfg)) continue;
             double d = Map.LoopDistance(c.X, c.Y, b.X, b.Y);
             if (d < best)
             {
@@ -885,17 +1133,32 @@ public sealed class Simulation
                 result = b;
             }
         }
-        if (result != null)
-        {
-            result.Claims++;
-            c.Burrow = result;
-        }
+        if (result != null) Claim(c, result);
         return result;
+    }
+
+    /// <summary>¿Lo dejan entrar por su color? Sí si la madriguera está vacía o no tiene regla de color.</summary>
+    bool ColorAdmitted(Creature c, Burrow b, BurrowConfig cfg)
+    {
+        int g = c.Def.BurrowColorGeneIndex;
+        return g < 0 || b.Color is not { } color || Genes[g].Space.Distance(color, c.Genes[g]) <= cfg.MaxColorDistance!.Value;
+    }
+
+    /// <summary>¿Dejaría entrar a <paramref name="c"/> esta madriguera ahora (por su color)? Para visores y pruebas.</summary>
+    public bool BurrowAdmits(Burrow b, Creature c) => ColorAdmitted(c, b, c.Def.Config.Burrows!);
+
+    static void Claim(Creature c, Burrow b)
+    {
+        int g = c.Def.BurrowColorGeneIndex;
+        if (g >= 0 && b.Claims == 0) b.Color = c.Genes[g]; // el primero le fija el color
+        b.Claims++;
+        c.Burrow = b;
     }
 
     static void LeaveBurrow(Creature c)
     {
-        c.Burrow!.Claims--;
+        var b = c.Burrow!;
+        if (--b.Claims == 0) b.Color = null;
         c.Burrow = null;
     }
 
@@ -1033,9 +1296,9 @@ public sealed class Simulation
     void Pathfind(Creature c, int need)
     {
         var m = Config.Movement;
-        if (need == Need.Safety && (InBurrow(c) || InCover(c)))
+        if (need == Need.Safety && (InBurrow(c) || InCover(c) || c.FleeDigging))
         {
-            c.Intent = Intent.None; // escondido: se queda quieto mientras dure el peligro
+            c.Intent = Intent.None; // escondido (o cavando): se queda quieto mientras dure el peligro
             return;
         }
         if (c.TargetKind == TargetKind.None)
@@ -1164,7 +1427,7 @@ public sealed class Simulation
                     c.Vx = 0;
                     c.Vy = 0;
                     c.Landed = true;
-                    if (plantsPerTile[c.TileX, c.TileY] > Config.World.MaxPlantsPerTile)
+                    if (plantsPerTile[c.TileX, c.TileY] > PlantCapacity(c.TileX, c.TileY))
                     {
                         Kill(c, DeathCause.Crowded);
                         return;

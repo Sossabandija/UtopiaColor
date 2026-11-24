@@ -50,7 +50,8 @@ O usa los `.bat` de arriba, que no pasan por el administrador.
   - Animales: flechas que apuntan hacia donde miran. El relleno es el color de su gen y el borde el de su especie. Más gordo = más lleno.
   - El mundo es un toro: alrededor del mapa se dibujan copias atenuadas de lo que hay al otro lado.
   - Con dispersión de semillas, las plantas muestran sus frutos (punto rojo-anaranjado) y abrojos (punto pajizo), más grandes mientras más tengan.
-  - Con madrigueras: círculos con borde de tierra clara. Vacías son negras y se van llenando con el color de su especie según el cupo reclamado (los que están dentro y los que van corriendo hacia ella).
+  - Con madrigueras: círculos con borde de tierra clara. Vacías son negras y se van llenando con el color de su especie según el cupo reclamado (los que están dentro y los que van corriendo hacia ella). Si son de un solo color (`maxColorDistance`), se llenan con el color de quienes la ocupan, visible desde el primero.
+  - Con derrumbes (`collapse`): una ruina es una mancha de tierra sin borde donde hubo una madriguera (mientras se ve, no se puede cavar cerca); la tierra revuelta oscurece la casilla, más mientras más plantas extra quepan.
   - Un animal escondido (en una madriguera o en una planta) se dibuja semitransparente.
   - De noche todo se oscurece un poco (tecla N para quitarlo).
 - **Panel** (derecha):
@@ -61,6 +62,7 @@ O usa los `.bat` de arriba, que no pasan por el administrador.
     - *Comida a la vista*: para cada especie que come, cuántas presas ve cada individuo, cuántas tienen el tamaño justo y cuántas son comestibles. Si "tamaño justo" es alto pero "comestibles" es bajo, el problema es el color.
     - *Nacimientos y muertes*: por día y por causa (hambre, sed, comidos, sin espacio, como brote). Solo aparecen las causas que ocurrieron.
     - *Etapa preferida por especie* (con gen de etapa): 0 = prefiere presas tempranas, 1 = tardías. La línea gris marca desde qué etapa un herbívoro alcanza a las plantas que ya soltaron semilla: si la curva de herbívoros la cruza, se están comiendo a las adultas.
+    - *Madrigueras en el mapa* (si la especie cava): cuántas hay; suben cuando cavan y bajan cuando se derrumban (abandonadas o por el tiempo). Con ruinas, también cuántas ruinas impiden cavar cerca.
     - *Presas en su refugio (%)* (con refugio, madrigueras o cobertura): qué parte de cada especie está a salvo (en su zona de refugio o en una madriguera). Con madrigueras, además, qué parte está dentro de una y qué parte del cupo está reclamada; con cobertura, qué parte está escondida en una planta (ahí solo se la ve de cerca, pero se la puede cazar).
     - *Dieta por especie* (con gen de dieta): 0 = folívoro, 1 = frugívoro.
     - *Gen dispersion: planta* (y cualquier gen de 3 o más esquinas): el peso promedio de cada esquina en el tiempo.
@@ -76,7 +78,7 @@ O usa los `.bat` de arriba, que no pasan por el administrador.
 - **Ficha** (abajo a la izquierda, al hacer clic en un ser): qué está haciendo, padres, genes y la urgencia de cada necesidad. La necesidad que atiende va enmarcada. En el mundo se dibuja la línea hacia su objetivo y su rango de visión.
   - Con brotes frágiles, un brote muestra su riesgo de morir por día.
   - Con saciedad, un animal que acaba de comer muestra cuántas horas le quedan sin cazar.
-  - Con refugio, madrigueras, cobertura y territorio: si está en su refugio, si huye hacia él, hacia su madriguera o hacia una planta, si está escondido, si tiene demasiados rivales cerca para criar o si espera tras una caza fallida.
+  - Con refugio, madrigueras, cobertura y territorio: si está en su refugio, si huye hacia él, hacia su madriguera o hacia una planta, si está escondido, si está cavando una madriguera (y cuánto lleva; también la de emergencia, al huir), si tiene demasiados rivales cerca para criar o si espera tras una caza fallida.
   - Con genética diploide, cada gen muestra también su alelo oculto (o "codominantes" si los dos dominan igual).
   - Con dispersión, una planta muestra cómo llegó (de su madre, con el viento, en un estómago o en un abrojo) y cuántos frutos y abrojos tiene; un animal, su dieta y cuántas semillas y abrojos lleva.
 

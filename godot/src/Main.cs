@@ -285,6 +285,9 @@ public partial class Main : Node
             FocusMode = Control.FocusModeEnum.None,
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             TooltipText = "Archivos de configuración en sim/configs",
+            // Sin esto se ensancha hasta el nombre más largo y empuja el panel fuera de la ventana.
+            FitToLongestItem = false,
+            ClipText = true,
         };
         configPicker.ItemSelected += _ => StartSimulation();
         configRow.AddChild(configPicker);
@@ -494,6 +497,22 @@ public partial class Main : Node
                     return curves;
                 }).ToList(),
                 max: 100, logAllowed: false)));
+        }
+
+        var diggers = s.Species.Where(sp => sp.Config.Burrows?.Dig != null).ToList();
+        if (diggers.Count > 0)
+        {
+            // Madrigueras que cavan: cuántas hay en el mapa (aparecen al cavar, se derrumban si nadie las usa).
+            // Con ruinas, también cuántas impiden cavar cerca.
+            chartDefs.Add(("Madrigueras en el mapa", () => chart.SetData(metricsHistory.Days,
+                diggers.SelectMany(sp => sp.Config.Burrows!.Collapse is { RuinDays: > 0 }
+                    ? new[]
+                    {
+                        Curve($"{sp.Name} (tope {sp.Config.Burrows!.Dig!.MaxCount})", Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.burrowCount")),
+                        Curve($"{sp.Name} ruinas", Palette.Ruin with { A = 1 }, metricsHistory.Get($"{sp.Name}.ruins")),
+                    }
+                    : [Curve($"{sp.Name} (tope {sp.Config.Burrows!.Dig!.MaxCount})", Palette.ForSpecies(sp.Index), metricsHistory.Get($"{sp.Name}.burrowCount"))]).ToList(),
+                logAllowed: false)));
         }
 
         var dietEaters = s.Species.Where(sp => sp.DietGeneIndex >= 0).ToList();

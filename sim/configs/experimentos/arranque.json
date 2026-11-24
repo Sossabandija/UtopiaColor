@@ -1,0 +1,38 @@
+// ¿Cómo evitar que los carnívoros se mueran de hambre en los primeros días? Base: madrigueras_cavadas.json
+// (12/16 coexisten; las 4 perdidas caen en los días 1-2: 6 carnívoros contra 26 herbívoros, casi todos escondidos).
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/arranque.json
+//
+// Variantes:
+//   mas_carnivoros    12 carnívoros al inicio en vez de 6
+//   mas_herbivoros    52 herbívoros al inicio en vez de 26
+//   carnivoros_tarde  los carnívoros llegan el día 3, cuando ya hay más presas
+//
+// Resultado (2026-11-24, 16 semillas × 100 días; coexisten / día en que cayeron los carnívoros en las perdidas):
+//   base                 12/16   días 1.0-2.2 (semillas 1, 3, 9, 10)
+//   mas_carnivoros        6/16   días 0.9-3.0; en la semilla 11 se extinguen los herbívoros (día 98.6)
+//   mas_herbivoros       11/16   días 0.7-3.0, y una el día 11.9
+//   carnivoros_tarde     12/16   días 12.8-14.8, y una el día 87 (otras semillas: 9, 10, 12, 14)
+//   las combinaciones    5-12/16; ninguna supera a la base
+// Ninguna variante ayuda: el arranque no depende de cuántos haya. Con comida 0.33-0.67 y hambre 16.5,
+// un carnívoro que caza se muere en 0.15-0.3 días si no come; con 12 se reparten las pocas presas y caen más rápido.
+// Si llegan el día 3 (con ~400 herbívoros) pasan el arranque, pero se disparan (~100 carnívoros el día 8),
+// dejan ~75 herbívoros, la mitad escondidos, y se mueren de hambre en medio día: la caída solo se atrasa.
+{
+  "base": "../madrigueras_cavadas.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    "mas_carnivoros": {
+      "species": [ { "name": "carnivoro", "initialCount": 12 } ]
+    },
+    "mas_herbivoros": {
+      "species": [ { "name": "herbivoro", "initialCount": 52 } ]
+    },
+    "carnivoros_tarde": {
+      "species": [ { "name": "carnivoro", "arrivalDay": 3 } ]
+    }
+  }
+}

@@ -1,0 +1,11 @@
+// agua_madrigueras.json + los herbívoros cavan madrigueras donde duermen (2026-11-24).
+// Parten con 30 madrigueras de 2 lugares repartidas al azar y cavan más; las que nadie usa en 3 días se derrumban.
+// El tope de 300 no se alcanza: la separación mínima entre madrigueras (3 casillas) las limita a ~90.
+// En experimentos/cavar.json ("sin_tope") coexistieron 12 de 16 semillas (2, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16);
+// las otras 4 perdieron a los carnívoros en los días 1-2. Base de experimentos/arranque.json.
+{
+  "extends": "agua_madrigueras.json",
+  "species": [
+    { "name": "herbivoro", "burrows": { "dig": { "maxCount": 300 } } }
+  ]
+}

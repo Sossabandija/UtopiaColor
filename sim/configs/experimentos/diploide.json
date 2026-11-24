@@ -1,5 +1,6 @@
 // ¿Qué cambia la genética diploide (dos alelos por gen, uno dominante y otro oculto)?
-// Base: ecosistema.json (lo que mejor funciona: dispersión, dieta, refugio en el agua y madrigueras).
+// Base: agua_madrigueras.json (dispersión, dieta, refugio en el agua y 30 madrigueras fijas; era ecosistema.json
+// cuando se corrió este experimento).
 //
 //   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/diploide.json
 //
@@ -7,9 +8,17 @@
 // se cruzan dos portadores. En las plantas además hace falta polen de una vecina (a menos de 3 casillas);
 // sin vecina se autopolinizan.
 //
-// Resultado: (pendiente)
+// Resultado (2026-11-24, semillas 1-16, 100 días, ~18 min): no cambia la coexistencia de forma clara.
+//   base 8/16 · plantas 7/16 · herbívoros 8/16 · plantas+herbívoros 5/16 (con 16 semillas, diferencias de 1-3 son ruido).
+//   Lo que más cambia es el arranque: los carnívoros caen antes del día 5 en 5 (base), 6, 6 y 9 corridas.
+// La carrera de color tampoco cambia: el tono de las plantas se mueve ~0.007-0.010 de vuelta por día en todas las
+// variantes, y la distancia de color a la comida de los herbívoros queda en 0.44-0.48.
+// La variación oculta es casi igual a la expresada (plantas 0.24-0.26 contra 0.26-0.30; herbívoros 0.32-0.33 ambas):
+// la dominancia es relativa a la pareja de alelos, así que un alelo queda oculto en unos individuos y se expresa en otros,
+// y la selección igual lo ve. Las plantas nunca se autopolinizaron: siempre hay una vecina a menos de 3 casillas.
+// Para ver colores realmente "guardados" haría falta que las mutaciones nuevas nazcan recesivas (dominancia baja).
 {
-  "base": "../ecosistema.json",
+  "base": "../agua_madrigueras.json",
   "days": 100,
   "runs": 16,
   "firstSeed": 1,

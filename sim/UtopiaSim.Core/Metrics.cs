@@ -59,6 +59,20 @@ public sealed class MetricsSample
     public required long[] Selfed { get; init; }
     /// <summary>Plantas diploides sin autopolinización: semillas que no se formaron por falta de polen en el intervalo.</summary>
     public required long[] Unpollinated { get; init; }
+    /// <summary>Madrigueras de cada especie en el mapa ahora (NaN si no tiene madrigueras).</summary>
+    public required double[] BurrowCount { get; init; }
+    /// <summary>Madrigueras cavadas y derrumbadas en el intervalo, por especie.</summary>
+    public required long[] BurrowsDug { get; init; }
+    /// <summary>De las cavadas, las de emergencia (al huir).</summary>
+    public required long[] BurrowsDugFleeing { get; init; }
+    public required long[] BurrowsCollapsed { get; init; }
+    /// <summary>De las derrumbadas, las que se cayeron por el tiempo (collapse.halfLifeDays).</summary>
+    public required long[] BurrowsAged { get; init; }
+    /// <summary>Ruinas que todavía impiden cavar, por especie (NaN si no deja ruinas).</summary>
+    public required double[] Ruins { get; init; }
+    /// <summary>Tierra revuelta: casillas con lugar extra para plantas, y cuántas plantas extra caben en total.</summary>
+    public required int TilledTiles { get; init; }
+    public required int TilledExtraPlants { get; init; }
 }
 
 /// <summary>
@@ -83,6 +97,10 @@ public sealed class SimMetrics : IDisposable
     long[] lastHuntsFailed;
     long[] lastSelfed;
     long[] lastUnpollinated;
+    long[] lastDug;
+    long[] lastDugFleeing;
+    long[] lastAged;
+    long[] lastCollapsed;
     long lastSampleTick;
 
     public SimMetrics(Simulation simulation)
@@ -98,6 +116,10 @@ public sealed class SimMetrics : IDisposable
         lastHuntsFailed = (long[])sim.Stats.HuntsFailed.Clone();
         lastSelfed = (long[])sim.Stats.Selfed.Clone();
         lastUnpollinated = (long[])sim.Stats.Unpollinated.Clone();
+        lastDug = (long[])sim.Stats.BurrowsDug.Clone();
+        lastDugFleeing = (long[])sim.Stats.BurrowsDugFleeing.Clone();
+        lastCollapsed = (long[])sim.Stats.BurrowsCollapsed.Clone();
+        lastAged = (long[])sim.Stats.BurrowsAged.Clone();
         sim.EventRaised += OnEvent;
     }
 
@@ -163,6 +185,29 @@ public sealed class SimMetrics : IDisposable
         lastSelfed = (long[])sim.Stats.Selfed.Clone();
         var unpollinated = sim.Stats.Unpollinated.Select((n, s) => n - lastUnpollinated[s]).ToArray();
         lastUnpollinated = (long[])sim.Stats.Unpollinated.Clone();
+        var dug = sim.Stats.BurrowsDug.Select((n, s) => n - lastDug[s]).ToArray();
+        lastDug = (long[])sim.Stats.BurrowsDug.Clone();
+        var dugFleeing = sim.Stats.BurrowsDugFleeing.Select((n, s) => n - lastDugFleeing[s]).ToArray();
+        lastDugFleeing = (long[])sim.Stats.BurrowsDugFleeing.Clone();
+        var collapsed = sim.Stats.BurrowsCollapsed.Select((n, s) => n - lastCollapsed[s]).ToArray();
+        lastCollapsed = (long[])sim.Stats.BurrowsCollapsed.Clone();
+        var aged = sim.Stats.BurrowsAged.Select((n, s) => n - lastAged[s]).ToArray();
+        lastAged = (long[])sim.Stats.BurrowsAged.Clone();
+        var ruins = Enumerable.Range(0, species)
+            .Select(s => sim.Species[s].Config.Burrows?.Collapse is { RuinDays: > 0 } ? sim.RuinsOf(s).Count : double.NaN).ToArray();
+        int tilledTiles = 0, tilledExtra = 0;
+        for (int tx = 0; tx < sim.Map.Size; tx++)
+        {
+            for (int ty = 0; ty < sim.Map.Size; ty++)
+            {
+                int extra = sim.TilledSlots(tx, ty);
+                if (extra == 0) continue;
+                tilledTiles++;
+                tilledExtra += extra;
+            }
+        }
+        var burrowCount = Enumerable.Range(0, species)
+            .Select(s => sim.HasBurrows(s) ? sim.Burrows.Count(b => b.Species == s) : double.NaN).ToArray();
 
         var inRefuge = new double[species];
         var inBurrow = new double[species];
@@ -215,6 +260,14 @@ public sealed class SimMetrics : IDisposable
             InCover = inCover,
             Selfed = selfed,
             Unpollinated = unpollinated,
+            BurrowCount = burrowCount,
+            BurrowsDug = dug,
+            BurrowsDugFleeing = dugFleeing,
+            BurrowsCollapsed = collapsed,
+            BurrowsAged = aged,
+            Ruins = ruins,
+            TilledTiles = tilledTiles,
+            TilledExtraPlants = tilledExtra,
         };
         Array.Clear(birthsInterval);
         Array.Clear(deathsInterval);

@@ -84,6 +84,8 @@ public partial class InspectorView : Control
                 : sim.IsHuntCooldown(c) ? $" · cazó sin éxito, espera {(c.HuntCooldownUntil - sim.Tick) / ticksPerDay * 24:0.0} h"
                 : "";
             if (sim.InRefugeZone(c)) status += " · en su refugio";
+            if (c.DigTicks > 0)
+                status += $" · cavando {100.0 * sim.DigProgress(c):0}%";
             if (c.TooCrowdedToBreed) status += " · demasiados rivales para criar";
             if (!c.Dead) Line($"Ahora: {Doing(sim, c)}{status}", Colors.White);
             if (c.Def.StageGeneIndex >= 0) Line($"Prefiere presas en etapa {sim.PreferredStage(c):0.00} (0 = temprano, 1 = tardío)");
@@ -176,7 +178,8 @@ public partial class InspectorView : Control
             Need.Water => "va a beber",
             Need.Mate => hasTarget ? $"busca pareja: {target}" : "busca pareja (deambula)",
             Need.Rest => "duerme",
-            Need.Safety => c.Burrow != null ? (sim.InBurrow(c) ? "escondido en su madriguera" : "huye a su madriguera")
+            Need.Safety => c.FleeDigging ? "cava una madriguera para esconderse"
+                : c.Burrow != null ? (sim.InBurrow(c) ? "escondido en su madriguera" : "huye a su madriguera")
                 : c.CoverPlant != null ? (sim.InCover(c) ? $"escondido en la planta #{c.CoverPlant.Id}" : $"corre a esconderse en la planta #{c.CoverPlant.Id}")
                 : c.TargetKind == TargetKind.Refuge ? "huye a su refugio"
                 : hasTarget ? $"huye de {target}" : "huye",

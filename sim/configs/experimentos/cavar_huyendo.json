@@ -1,0 +1,34 @@
+// Idea 1: pocas madrigueras al comienzo, que los herbívoros cavan al huir, de un solo color y que quitan lugar a las plantas.
+// Base: madrigueras_cavadas.json (30 madrigueras de 2 al inicio, cavan dormidos; 12/16 coexisten, las 4 perdidas
+// caen en los días 1-2 porque los carnívoros no encuentran presas: 60 lugares para 26 herbívoros).
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/cavar_huyendo.json
+//
+// Variantes:
+//   huida    parten 6 madrigueras de 4 lugares (24 en vez de 60) y, además de cavar dormidos, cavan al huir:
+//            si no hay madriguera con cupo y el carnívoro está a más de 2 casillas, se detienen a cavar
+//            una de emergencia (0,01 días ≈ 45 ticks; un carnívoro corre ~2 casillas en ese tiempo).
+//   color    el primero que reclama una madriguera le fija su color; solo entran herbívoros a 0,3 o menos
+//            de ese color (el disco tiene radio 1; la dispersión de color de los herbívoros parte en 0,05
+//            y llega a ~0,5 hacia el día 50). Vacía, pierde el color.
+//   casilla  en la casilla de una madriguera cabe una planta menos (1 en vez de 2).
+//
+// Resultado: (pendiente)
+{
+  "base": "../madrigueras_cavadas.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    "huida": {
+      "species": [ { "name": "herbivoro", "burrows": { "count": 6, "capacity": 4, "dig": { "fleeDigDays": 0.01 } } } ]
+    },
+    "color": {
+      "species": [ { "name": "herbivoro", "burrows": { "maxColorDistance": 0.3 } } ]
+    },
+    "casilla": {
+      "species": [ { "name": "herbivoro", "burrows": { "plantSlots": 1 } } ]
+    }
+  }
+}

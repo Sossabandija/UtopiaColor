@@ -1,0 +1,10 @@
+// ecosistema.json tal como estaba antes de que los herbívoros cavaran (2026-11-24): dispersion.json + refugio en el
+// agua + 30 madrigueras fijas de 2 lugares. Base de experimentos/diploide.json y experimentos/cavar.json, para que
+// sus resultados se puedan repetir aunque ecosistema.json siga cambiando.
+// En experimentos/madrigueras.json coexistieron 8 de 16 semillas (1, 2, 3, 5, 6, 7, 8 y 15).
+{
+  "extends": "dispersion.json",
+  "species": [
+    { "name": "herbivoro", "refuge": { "maxHeight": 0.3 }, "burrows": { "count": 30, "capacity": 2 } }
+  ]
+}

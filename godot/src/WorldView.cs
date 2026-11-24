@@ -46,6 +46,8 @@ public partial class WorldView : Node2D
     SpeciesLayer[] layers = [];
     SpeciesLayer? markers; // frutos y abrojos sobre las plantas
     SpeciesLayer? burrowLayer; // madrigueras: sobre las plantas (si no, el pasto las tapa) y bajo los animales
+    SpeciesLayer? ruinLayer;   // ruinas de madrigueras derrumbadas, bajo las madrigueras
+    SpeciesLayer? tilledLayer; // tierra revuelta: casillas con lugar extra para plantas, bajo todo
     bool dragging;
     float dragDistance;
 
@@ -94,15 +96,24 @@ public partial class WorldView : Node2D
         foreach (var l in layers) l.Free();
         markers?.Free();
         burrowLayer?.Free();
+        ruinLayer?.Free();
+        tilledLayer?.Free();
         // Plantas primero para que queden debajo de los animales; entre medio, sus frutos y abrojos y las madrigueras.
+        // Debajo de todo, la tierra revuelta.
         float width = (float)s.Map.Width;
+        tilledLayer = s.Species.Any(sp => sp.Config.Burrows?.Collapse is { TilledSlots: > 0 })
+            ? new SpeciesLayer(creatureRoot, -1, Meshes.Square, withBorder: false, default, CopyOffsets(width))
+            : null;
         layers = new SpeciesLayer[s.Species.Count];
         foreach (var sp in s.Species.Where(sp => sp.IsPlant))
             layers[sp.Index] = new SpeciesLayer(creatureRoot, sp, Palette.ForSpecies(sp.Index), CopyOffsets(width));
         markers = s.Species.Any(sp => sp.IsPlant && sp.Plant.Dispersal != null)
             ? new SpeciesLayer(creatureRoot, -1, Meshes.Circle, withBorder: false, default, CopyOffsets(width))
             : null;
-        burrowLayer = s.Burrows.Count > 0
+        ruinLayer = s.Species.Any(sp => sp.Config.Burrows?.Collapse is { RuinDays: > 0 })
+            ? new SpeciesLayer(creatureRoot, -1, Meshes.Circle, withBorder: false, default, CopyOffsets(width))
+            : null;
+        burrowLayer = s.Species.Any(sp => s.HasBurrows(sp.Index)) // también si parten en 0 y las cavan
             ? new SpeciesLayer(creatureRoot, -1, Meshes.Circle, withBorder: true, Palette.BurrowRim, CopyOffsets(width))
             : null;
         foreach (var sp in s.Species.Where(sp => !sp.IsPlant))
@@ -167,14 +178,50 @@ public partial class WorldView : Node2D
         foreach (var l in layers) l.End();
         markers?.End();
 
-        // Madrigueras: hoyo oscuro que se llena con el color de su especie según el cupo reclamado.
+        // Tierra revuelta: la casilla se oscurece más mientras más plantas extra quepan.
+        if (tilledLayer != null)
+        {
+            var map = sim.Map;
+            tilledLayer.Begin(map.Size * map.Size);
+            float half = 0.5f * (float)map.TileSize;
+            for (int tx = 0; tx < map.Size; tx++)
+            {
+                for (int ty = 0; ty < map.Size; ty++)
+                {
+                    int extra = sim.TilledSlots(tx, ty);
+                    if (extra == 0) continue;
+                    var tint = Palette.Tilled;
+                    tint.A = Math.Min(0.75f, 0.2f + 0.15f * extra);
+                    tilledLayer.Add(new Vector2((tx + 0.5f) * 2 * half, (ty + 0.5f) * 2 * half), 0, half, tint);
+                }
+            }
+            tilledLayer.End();
+        }
+
+        // Ruinas: mancha de tierra donde hubo una madriguera; mientras se ve, no se puede cavar cerca.
+        if (ruinLayer != null)
+        {
+            float r = Math.Max(MinBurrowScreenPx / zoom, 0.4f * (float)sim.Map.TileSize);
+            int n = sim.Species.Sum(sp => sim.RuinsOf(sp.Index).Count);
+            ruinLayer.Begin(n);
+            foreach (var sp in sim.Species)
+                foreach (var ruin in sim.RuinsOf(sp.Index))
+                    ruinLayer.Add(new Vector2((float)ruin.X, (float)ruin.Y), 0, r, Palette.Ruin);
+            ruinLayer.End();
+        }
+
+        // Madrigueras: hoyo oscuro que se llena con el color de su especie según el cupo reclamado. Con madrigueras de un
+        // solo color (maxColorDistance), se llena con el color de quienes la ocupan, bien visible desde el primero.
         if (burrowLayer != null)
         {
             burrowLayer.Begin(sim.Burrows.Count);
             float r = Math.Max(MinBurrowScreenPx / zoom, 0.4f * (float)sim.Map.TileSize);
             foreach (var b in sim.Burrows)
             {
-                var fill = Palette.BurrowHole.Lerp(Palette.ForSpecies(b.Species), (float)b.Claims / b.Capacity);
+                float used = (float)b.Claims / b.Capacity;
+                var fill = b.Color is { } bc && colorGene != null && sim.Species[b.Species].BurrowColorGeneIndex == colorGene.Index
+                    ? Palette.BurrowHole.Lerp(Palette.FromDisk(bc), 0.4f + 0.6f * used)
+                    : Palette.BurrowHole.Lerp(Palette.ForSpecies(b.Species), used);
                 burrowLayer.Add(new Vector2((float)b.X, (float)b.Y), 0, r, fill);
             }
             burrowLayer.End();
@@ -437,6 +484,13 @@ public partial class WorldView : Node2D
     static class Meshes
     {
         public static readonly ArrayMesh Circle = Build(CircleFan(16));
+
+        /// <summary>Cuadrado de lado 2 (de -1 a 1): una casilla con escala = media casilla.</summary>
+        public static readonly ArrayMesh Square = Build(
+        [
+            new(-1f, -1f), new(1f, -1f), new(1f, 1f),
+            new(-1f, -1f), new(1f, 1f), new(-1f, 1f),
+        ]);
 
         public static readonly ArrayMesh Arrow = Build(
         [

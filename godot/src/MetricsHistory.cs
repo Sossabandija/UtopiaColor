@@ -102,6 +102,8 @@ sealed class MetricsHistory
                 Add($"{sp.Name}.burrowUse", m.BurrowUse[s] * 100);
             }
             if (sim.HasCover(s)) Add($"{sp.Name}.inCover", m.InCover[s] * 100);
+            if (sp.Config.Burrows?.Dig != null) Add($"{sp.Name}.burrowCount", m.BurrowCount[s]);
+            if (sp.Config.Burrows?.Collapse is { RuinDays: > 0 }) Add($"{sp.Name}.ruins", m.Ruins[s]);
             if (sp.Config.Territory is { Interference: > 0 }) Add($"{sp.Name}.huntsFailed", m.HuntsFailed[s] / days);
         }
     }

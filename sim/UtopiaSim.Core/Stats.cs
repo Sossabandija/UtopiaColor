@@ -11,6 +11,10 @@ public sealed class SimStats
         HuntsFailed = new long[speciesCount];
         Selfed = new long[speciesCount];
         Unpollinated = new long[speciesCount];
+        BurrowsDug = new long[speciesCount];
+        BurrowsDugFleeing = new long[speciesCount];
+        BurrowsCollapsed = new long[speciesCount];
+        BurrowsAged = new long[speciesCount];
     }
 
     /// <summary>Nacimientos por especie (semillas y crías; no cuenta la población inicial).</summary>
@@ -30,6 +34,18 @@ public sealed class SimStats
 
     /// <summary>Plantas diploides sin autopolinización: semillas que no se formaron por falta de polen.</summary>
     public long[] Unpollinated { get; }
+
+    /// <summary>Madrigueras que cavó cada especie (dormidos y al huir).</summary>
+    public long[] BurrowsDug { get; }
+
+    /// <summary>De esas, las que cavó de emergencia al huir (dig.fleeDigDays).</summary>
+    public long[] BurrowsDugFleeing { get; }
+
+    /// <summary>Madrigueras de cada especie que se derrumbaron (por abandono o por el tiempo).</summary>
+    public long[] BurrowsCollapsed { get; }
+
+    /// <summary>De esas, las que se derrumbaron por el tiempo (collapse.halfLifeDays).</summary>
+    public long[] BurrowsAged { get; }
 }
 
 /// <summary>

@@ -23,6 +23,8 @@ public class SimulationTests
     [InlineData("etapa.json")]
     [InlineData("etapa_refugio.json")]
     [InlineData("dispersion.json")]
+    [InlineData("agua_madrigueras.json")]
+    [InlineData("madrigueras_cavadas.json")]
     [InlineData("ecosistema.json")]
     public void ShippedConfigsLoad(string file)
     {

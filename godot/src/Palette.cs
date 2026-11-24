@@ -38,6 +38,9 @@ static class Palette
     /// <summary>Madrigueras: el hoyo vacío y el borde de tierra; se llenan con el color de su especie según el cupo usado.</summary>
     public static readonly Color BurrowHole = new(0.10f, 0.07f, 0.05f);
     public static readonly Color BurrowRim = new(0.92f, 0.80f, 0.55f);
+    /// <summary>Ruina de una madriguera derrumbada (relleno, semitransparente) y tierra revuelta (casilla con lugar extra).</summary>
+    public static readonly Color Ruin = new(0.55f, 0.42f, 0.28f, 0.55f);
+    public static readonly Color Tilled = new(0.40f, 0.26f, 0.12f);
 
     public static Color ForSpecies(int index) => SpeciesColors[index % SpeciesColors.Length];
 

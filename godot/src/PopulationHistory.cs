@@ -26,7 +26,7 @@ sealed class PopulationHistory
     public void Observe(Simulation sim)
     {
         for (int s = 0; s < ExtinctDay.Length; s++)
-            if (ExtinctDay[s] == null && sim.Population(s) == 0) ExtinctDay[s] = sim.Day;
+            if (ExtinctDay[s] == null && sim.Population(s) == 0 && sim.HasArrived(s)) ExtinctDay[s] = sim.Day;
         if (sim.Tick % SampleEvery == 0) Record(sim);
     }
 

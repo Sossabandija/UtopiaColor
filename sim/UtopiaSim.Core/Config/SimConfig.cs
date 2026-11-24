@@ -162,6 +162,7 @@ public sealed class SimConfig
             Check(!string.IsNullOrWhiteSpace(s.Name), "Hay una especie sin nombre.");
             Check(speciesNames.Add(s.Name), $"Especie repetida: '{s.Name}'.");
             Check(s.InitialCount >= 0, $"{who}: initialCount no puede ser negativo.");
+            Check(s.ArrivalDay >= 0, $"{who}: arrivalDay no puede ser negativo.");
             Check(s.CaloriesRate >= 0, $"{who}: caloriesRate no puede ser negativo.");
             if (s.Kind == SpeciesKind.Plant)
             {
@@ -202,7 +203,20 @@ public sealed class SimConfig
                         $"{who}: territory.radiusTiles debe ser positivo; interference, tolerance, maxRivalsToBreed y failCooldownDays, ≥ 0.");
                 if (s.Burrows is { } b)
                 {
-                    Check(b.Count >= 1 && b.Capacity >= 1, $"{who}: burrows.count y burrows.capacity deben ser al menos 1.");
+                    Check(b.Count >= 0 && b.Capacity >= 1 && (b.Count >= 1 || b.Dig != null),
+                        $"{who}: burrows.capacity debe ser al menos 1, y burrows.count también (salvo que la especie cave: dig).");
+                    if (b.Dig is { } dg)
+                        Check(dg.MaxCount >= 1 && dg.DigDays > 0 && dg.AbandonDays is null or > 0 && dg.FleeDigDays is null or > 0 && dg.FleeSafeTiles >= 0,
+                            $"{who}: burrows.dig.maxCount ≥ 1; digDays, abandonDays y fleeDigDays positivos; fleeSafeTiles ≥ 0.");
+                    Check(b.PlantSlots >= 0, $"{who}: burrows.plantSlots no puede ser negativo.");
+                    if (b.Collapse is { } col)
+                        Check(col.HalfLifeDays is null or > 0 && col.RuinDays >= 0 && col.TilledSlots >= 0 && col.MaxTilledSlots >= 0,
+                            $"{who}: burrows.collapse: halfLifeDays positivo; ruinDays, tilledSlots y maxTilledSlots ≥ 0.");
+                    if (b.MaxColorDistance is double mcd)
+                    {
+                        Check(mcd >= 0, $"{who}: burrows.maxColorDistance no puede ser negativo.");
+                        Check(geneNames.Contains(b.ColorGene), $"{who}: burrows.colorGene: no existe el gen '{b.ColorGene}'.");
+                    }
                     Check(b.SearchTiles > 0 && b.EnterTiles > 0 && b.MinSpacingTiles >= 0,
                         $"{who}: burrows.searchTiles y enterTiles deben ser positivos; minSpacingTiles, ≥ 0.");
                     Check(b.MinHeight >= 0 && b.MaxHeight <= 1 && b.MinHeight < b.MaxHeight,
@@ -349,6 +363,11 @@ public sealed class SpeciesConfig
     public string Name { get; set; } = "";
     public SpeciesKind Kind { get; set; } = SpeciesKind.Animal;
     public int InitialCount { get; set; }
+    /// <summary>
+    /// Día en que llega la población inicial (initialCount individuos, repartidos al azar). 0 = desde el comienzo,
+    /// como el original. Sirve para que un depredador llegue cuando ya hay presas.
+    /// </summary>
+    public double ArrivalDay { get; set; }
     /// <summary>Nombres de las especies que puede comer.</summary>
     public List<string> Eats { get; set; } = [];
     public double Speed { get; set; }
@@ -511,6 +530,60 @@ public sealed class BurrowConfig
     /// <summary>Alturas del suelo (0-1, como en refuge) donde se puede cavar; siempre fuera del agua.</summary>
     public double MinHeight { get; set; }
     public double MaxHeight { get; set; } = 1;
+    /// <summary>La especie cava sus propias madrigueras. Null = solo las <see cref="Count"/> iniciales, fijas.</summary>
+    public DigConfig? Dig { get; set; }
+    /// <summary>
+    /// Cuántas plantas menos caben en la casilla de una madriguera (el tope es world.maxPlantsPerTile).
+    /// Las plantas que ya están no mueren: solo baja el cupo para las semillas que caen ahí. 0 = no ocupa lugar.
+    /// </summary>
+    public int PlantSlots { get; set; }
+    /// <summary>
+    /// Madriguera de un solo color: el primero que la reclama le fija su color (gen colorGene) y solo entran los que estén
+    /// a esta distancia de color o menos; cuando queda vacía, pierde el color. Null = entra cualquiera.
+    /// </summary>
+    public double? MaxColorDistance { get; set; }
+    public string ColorGene { get; set; } = "color";
+    /// <summary>Derrumbes por el tiempo, ruinas y tierra revuelta. Null = solo se derrumban por abandono (dig.abandonDays).</summary>
+    public CollapseConfig? Collapse { get; set; }
+}
+
+/// <summary>
+/// Derrumbe de madrigueras. Con halfLifeDays, cada madriguera (también las iniciales) dura un tiempo al azar con esa vida
+/// media: la mitad se cae antes de halfLifeDays, la mitad de las que quedan antes del doble, etc. Al caerse, los que estaban
+/// dentro o iban hacia ella salen. Cualquier derrumbe (por tiempo o por abandono) deja:
+///   - una ruina que impide cavar otra a menos de minSpacingTiles durante ruinDays, como si siguiera ahí;
+///   - tierra revuelta: en su casilla caben tilledSlots plantas más, acumulable hasta maxTilledSlots (para siempre).
+/// Cada parte está apagada con su valor por defecto.
+/// </summary>
+public sealed class CollapseConfig
+{
+    /// <summary>Vida media de una madriguera, en días. Null = no se caen por el tiempo.</summary>
+    public double? HalfLifeDays { get; set; }
+    public double RuinDays { get; set; }
+    public int TilledSlots { get; set; }
+    public int MaxTilledSlots { get; set; } = 3;
+}
+
+/// <summary>
+/// Cavar madrigueras. Un animal que duerme en tierra seca, sin otra madriguera de su especie a menos de minSpacingTiles,
+/// cava una donde está: la termina tras digDays durmiendo ahí (si se mueve más de media casilla, empieza de nuevo).
+/// Con fleeDigDays, también cava al huir: si está amenazado, no consiguió madriguera con cupo y el depredador está a más
+/// de fleeSafeTiles, se detiene a cavar ahí mismo; al terminar (fleeDigDays después) se mete en ella. Si el depredador se
+/// acerca a fleeSafeTiles o menos, deja de cavar y arranca (pierde lo avanzado).
+/// La especie no puede tener más de maxCount en el mapa (contando las iniciales). Una madriguera que nadie reclama durante
+/// abandonDays se derrumba (también las iniciales). Así el número de refugios sigue a dónde viven los animales,
+/// pero con tope.
+/// </summary>
+public sealed class DigConfig
+{
+    public int MaxCount { get; set; } = 30;
+    public double DigDays { get; set; } = 0.1;
+    /// <summary>Null = nunca se derrumban.</summary>
+    public double? AbandonDays { get; set; } = 3;
+    /// <summary>Días que tarda en cavar una madriguera de emergencia al huir. Null = no cava al huir.</summary>
+    public double? FleeDigDays { get; set; }
+    /// <summary>Solo cava al huir mientras el depredador esté a más de esto (casillas).</summary>
+    public double FleeSafeTiles { get; set; } = 2;
 }
 
 /// <summary>

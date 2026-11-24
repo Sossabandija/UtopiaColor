@@ -1,17 +1,15 @@
-// El ecosistema con todo lo que ha funcionado hasta ahora (2026-11-24):
+// El ecosistema con todo lo que ha funcionado hasta ahora (2026-11-24). Cada archivo agrega una capa:
 //   - etapa.json: gen de etapa preferida (temprano / tardío).
 //   - etapa_refugio.json: las plantas adultas quedan fuera del alcance de un herbívoro de etapa 0.5;
 //     carnívoros con saciedad y pareja a distancia.
 //   - dispersion.json: semillas por fruto, viento o abrojo (gen triangular) y dieta de los herbívoros.
-//   - aquí: los herbívoros se refugian en el agua, donde los carnívoros no cazan, y en 30 madrigueras de 2 lugares.
+//   - agua_madrigueras.json: los herbívoros se refugian en el agua y en 30 madrigueras de 2 lugares.
+//   - madrigueras_cavadas.json: además cavan madrigueras donde duermen (hasta ~90).
 //
-// En experimentos/madrigueras.json, 8 de 16 semillas coexistieron los 100 días (1, 2, 3, 5, 6, 7, 8 y 15).
-// Antes, solo con el agua, fueron 3 de 16 (experimentos/depredadores.json).
-// Para ver una en el visor: elige "ecosistema" y la semilla 1 (los herbívoros caen a 33 el día 42 y se recuperan
-// gracias a las madrigueras) o la 8.
+// En experimentos/cavar.json, 12 de 16 semillas coexistieron los 100 días (2, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16);
+// las otras 4 perdieron a los carnívoros en los días 1-2. Antes: 8 de 16 con 30 madrigueras fijas
+// (experimentos/madrigueras.json) y 3 de 16 solo con el agua (experimentos/depredadores.json).
+// Para ver una en el visor: elige "ecosistema" y la semilla 2 o la 8.
 {
-  "extends": "dispersion.json",
-  "species": [
-    { "name": "herbivoro", "refuge": { "maxHeight": 0.3 }, "burrows": { "count": 30, "capacity": 2 } }
-  ]
+  "extends": "madrigueras_cavadas.json"
 }

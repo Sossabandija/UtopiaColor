@@ -14,6 +14,10 @@ static class MetricsCsv
         string.Concat(pascal.Select((ch, i) => char.IsUpper(ch) ? (i > 0 ? "_" : "") + char.ToLowerInvariant(ch) : ch.ToString()));
 
     static IEnumerable<SpeciesDef> Dispersing(Simulation sim) => sim.Species.Where(sp => sp.IsPlant && sp.Plant.Dispersal != null);
+    static IEnumerable<SpeciesDef> Diggers(Simulation sim) => sim.Species.Where(sp => sp.Config.Burrows?.Dig != null);
+    static IEnumerable<SpeciesDef> FleeDiggers(Simulation sim) => sim.Species.Where(sp => sp.Config.Burrows?.Dig?.FleeDigDays != null);
+    static IEnumerable<SpeciesDef> Collapsing(Simulation sim) => sim.Species.Where(sp => sp.Config.Burrows?.Collapse != null);
+    static bool Tills(Simulation sim) => sim.Species.Any(sp => sp.Config.Burrows?.Collapse is { TilledSlots: > 0 });
     static IEnumerable<SpeciesDef> DiploidPlants(Simulation sim) => sim.Species.Where(sp => sp.IsPlant && sp.Config.Diploid != null);
 
     /// <summary>Nombre de cada esquina de un polígono de 3 o más lados (vertexNames, o v0, v1...).</summary>
@@ -35,6 +39,10 @@ static class MetricsCsv
     ///   {planta con dispersión}_seeds_parent/_wind/_gut/_burr, _seeds_digested, _fruits_eaten/_fallen, _burrs_attached/_fallen (por día)
     ///   {especie con territorialidad}_hunts_failed_per_day; {especie con refugio o madrigueras}_in_refuge (fracción escondida)
     ///   {especie con madrigueras}_in_burrow (fracción dentro de una madriguera), _burrow_use (fracción del cupo reclamada)
+    ///   {especie que cava}_burrows (madrigueras en el mapa), _burrows_dug_per_day, _burrows_collapsed_per_day
+    ///   {especie que cava al huir}_burrows_dug_fleeing_per_day (de las cavadas, las de emergencia)
+    ///   {especie con collapse}_burrows_aged_per_day (derrumbadas por el tiempo), _ruins (ruinas que impiden cavar cerca)
+    ///   con tierra revuelta: tilled_tiles (casillas con lugar extra para plantas), tilled_extra_plants (plantas extra que caben)
     ///   {especie con cobertura}_in_cover (fracción escondida en una planta grande)
     ///   {especie diploide}_{gen}_hidden_spread (distancia del alelo oculto al centro de lo expresado), _allele_gap (entre sus dos alelos)
     ///   {planta diploide}_selfed_per_day (semillas autopolinizadas), _unpollinated_per_day (sin polen, sin semilla)
@@ -67,6 +75,10 @@ static class MetricsCsv
         foreach (var sp in DiploidPlants(sim)) cols.AddRange([$"{sp.Name}_selfed_per_day", $"{sp.Name}_unpollinated_per_day"]);
         foreach (var sp in sim.Species.Where(sp => sim.HasRefuge(sp.Index))) cols.Add($"{sp.Name}_in_refuge");
         foreach (var sp in sim.Species.Where(sp => sim.HasBurrows(sp.Index))) cols.AddRange([$"{sp.Name}_in_burrow", $"{sp.Name}_burrow_use"]);
+        foreach (var sp in Diggers(sim)) cols.AddRange([$"{sp.Name}_burrows", $"{sp.Name}_burrows_dug_per_day", $"{sp.Name}_burrows_collapsed_per_day"]);
+        foreach (var sp in FleeDiggers(sim)) cols.Add($"{sp.Name}_burrows_dug_fleeing_per_day");
+        foreach (var sp in Collapsing(sim)) cols.AddRange([$"{sp.Name}_burrows_aged_per_day", $"{sp.Name}_ruins"]);
+        if (Tills(sim)) cols.AddRange(["tilled_tiles", "tilled_extra_plants"]);
         foreach (var sp in sim.Species.Where(sp => sim.HasCover(sp.Index))) cols.Add($"{sp.Name}_in_cover");
         return string.Join(',', cols);
     }
@@ -128,6 +140,23 @@ static class MetricsCsv
         {
             cells.Add(double.IsNaN(m.InBurrow[sp.Index]) ? "" : F(m.InBurrow[sp.Index]));
             cells.Add(double.IsNaN(m.BurrowUse[sp.Index]) ? "" : F(m.BurrowUse[sp.Index]));
+        }
+        foreach (var sp in Diggers(sim))
+        {
+            cells.Add(F(m.BurrowCount[sp.Index]));
+            cells.Add(F(m.BurrowsDug[sp.Index] / days));
+            cells.Add(F(m.BurrowsCollapsed[sp.Index] / days));
+        }
+        foreach (var sp in FleeDiggers(sim)) cells.Add(F(m.BurrowsDugFleeing[sp.Index] / days));
+        foreach (var sp in Collapsing(sim))
+        {
+            cells.Add(F(m.BurrowsAged[sp.Index] / days));
+            cells.Add(double.IsNaN(m.Ruins[sp.Index]) ? "" : F(m.Ruins[sp.Index]));
+        }
+        if (Tills(sim))
+        {
+            cells.Add(m.TilledTiles.ToString(Inv));
+            cells.Add(m.TilledExtraPlants.ToString(Inv));
         }
         foreach (var sp in sim.Species.Where(sp => sim.HasCover(sp.Index)))
             cells.Add(double.IsNaN(m.InCover[sp.Index]) ? "" : F(m.InCover[sp.Index]));

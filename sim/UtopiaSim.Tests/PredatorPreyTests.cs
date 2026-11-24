@@ -214,6 +214,337 @@ public class PredatorPreyTests
         Assert.False(sim.InRefuge(hidden));
     }
 
+    // ------------------------------------------------------------------ llegada tardía
+
+    [Fact]
+    public void ArrivalDay_SpeciesAppearsLater_WithoutChangingTheStart()
+    {
+        var late = new Simulation(OriginalWith("""{ "species": [ { "name": "carnivoro", "arrivalDay": 0.01 } ] }"""), seed: 5);
+        var original = new Simulation(Original(), seed: 5);
+        int arrival = (int)Math.Round(0.01 * late.Config.World.TicksPerDay);
+
+        Assert.Equal(0, late.Population(2));
+        Assert.False(late.HasArrived(2));
+        Assert.True(late.HasArrived(1));
+        // Sin los carnívoros, el resto parte igual que siempre (los carnívoros se sortean al final).
+        Assert.Equal(original.Creatures.Where(c => c.Species != 2).Select(c => (c.X, c.Y)), late.Creatures.Select(c => (c.X, c.Y)));
+
+        for (int i = 0; i < arrival; i++) late.Step();
+        Assert.True(late.HasArrived(2));
+        Assert.Equal(late.Config.Species[2].InitialCount, late.Population(2));
+        Assert.All(late.Creatures.Where(c => c.Species == 2), c => Assert.Equal(arrival, c.BirthTick));
+    }
+
+    // ------------------------------------------------------------------ cavar madrigueras
+
+    /// <summary>Herbívoros solos (sin plantas ni carnívoros) que cavan; parten de noche, así que duermen.</summary>
+    static Simulation Diggers(int herbivores, string dig) => new(OriginalWith($$"""
+        { "species": [ { "name": "planta", "initialCount": 0 },
+                       { "name": "herbivoro", "initialCount": {{herbivores}}, "burrows": { "count": 0, "dig": {{dig}} } },
+                       { "name": "carnivoro", "initialCount": 0 } ] }
+        """), seed: 1);
+
+    /// <summary>Avanza sin hambre, sed ni ganas de pareja: de noche, lo más urgente es dormir.</summary>
+    static void StepAsleep(Simulation sim, int ticks)
+    {
+        for (int i = 0; i < ticks; i++)
+        {
+            foreach (var c in sim.Creatures)
+                foreach (int n in new[] { Need.Food, Need.Water, Need.Mate, Need.Care })
+                    c.Needs[n] = 1;
+            sim.Step();
+        }
+    }
+
+    [Fact]
+    public void Dig_ASleepingAnimalDigsABurrowWhereItSleeps()
+    {
+        var sim = Diggers(1, """{ "digDays": 0.02 }""");
+        var herb = sim.Creatures.Single();
+        var (_, high) = Extremes(sim); // tierra seca
+        (herb.X, herb.Y) = high;
+        int needed = sim.DigTicksNeeded(sim.Config.Species[1].Burrows!);
+
+        StepAsleep(sim, needed + 2 * sim.Config.Movement.TickBucketCount);
+
+        Assert.Equal(Need.Rest, herb.TopNeed);
+        var burrow = Assert.Single(sim.Burrows);
+        Assert.True(burrow.Dug);
+        Assert.True(sim.Map.LoopDistance(burrow.X, burrow.Y, herb.X, herb.Y) <= 0.5 * sim.Map.TileSize);
+        Assert.Equal(1, sim.Stats.BurrowsDug[1]);
+
+        // Durmiendo junto a su madriguera no cava otra (quedaría a menos de minSpacingTiles).
+        StepAsleep(sim, 2 * needed);
+        Assert.Single(sim.Burrows);
+    }
+
+    [Fact]
+    public void Dig_NeverMoreThanMaxCount()
+    {
+        var sim = Diggers(40, """{ "digDays": 0.02, "maxCount": 3 }""");
+        StepAsleep(sim, 3 * sim.DigTicksNeeded(sim.Config.Species[1].Burrows!) + 2 * sim.Config.Movement.TickBucketCount);
+        Assert.Equal(3, sim.Burrows.Count);
+    }
+
+    [Fact]
+    public void Dig_AbandonedBurrowsCollapse_UsedOnesDoNot()
+    {
+        var sim = new Simulation(OriginalWith("""
+            { "species": [ { "name": "planta", "initialCount": 0 },
+                           { "name": "herbivoro", "initialCount": 0, "burrows": { "count": 2, "dig": { "abandonDays": 0.01 } } },
+                           { "name": "carnivoro", "initialCount": 0 } ] }
+            """), seed: 1);
+        Assert.Equal(2, sim.Burrows.Count);
+        sim.Burrows[0].Claims = 1; // alguien la tiene reclamada
+        for (int i = 0; i < 0.02 * sim.Config.World.TicksPerDay; i++) sim.Step();
+
+        Assert.Single(sim.Burrows);
+        Assert.Equal(1, sim.Burrows[0].Claims);
+        Assert.Equal(1, sim.Stats.BurrowsCollapsed[1]);
+    }
+
+    // ------------------------------------------------------------------ cavar al huir, color y lugar de plantas
+
+    /// <summary>
+    /// Un herbívoro en tierra seca, sin madrigueras, que cava de emergencia; un carnívoro (dormido: parten de noche)
+    /// a <paramref name="carnTiles"/> casillas.
+    /// </summary>
+    static (Simulation Sim, Creature Herb, Creature Carn) FleeDigScene(double carnTiles)
+    {
+        var sim = new Simulation(OriginalWith("""
+            { "species": [ { "name": "planta", "initialCount": 0 },
+                           { "name": "herbivoro", "initialCount": 1,
+                             "burrows": { "count": 0, "dig": { "fleeDigDays": 0.005, "fleeSafeTiles": 2 } } },
+                           { "name": "carnivoro", "initialCount": 1 } ] }
+            """), seed: 1);
+        var herb = sim.Creatures.Single(c => c.Def.Name == "herbivoro");
+        var carn = sim.Creatures.Single(c => c.Def.Name == "carnivoro");
+        var (_, high) = Extremes(sim); // tierra seca
+        (herb.X, herb.Y) = high;
+        (carn.X, carn.Y) = (high.X + carnTiles * sim.Map.TileSize, high.Y);
+        return (sim, herb, carn);
+    }
+
+    static void StepCalmFor(Simulation sim, int ticks, Func<bool> until, params Creature[] who)
+    {
+        for (int i = 0; i < ticks && !until(); i++)
+        {
+            foreach (var c in who)
+                for (int n = 0; n < Need.Count; n++)
+                    if (n != Need.Safety) c.Needs[n] = 1;
+            sim.Step();
+        }
+    }
+
+    [Fact]
+    public void FleeDig_ThreatenedPreyStopsToDig_AndHidesInIt()
+    {
+        var (sim, herb, carn) = FleeDigScene(carnTiles: 3);
+        StepCalmFor(sim, 100, () => herb.FleeDigging, herb, carn);
+        Assert.True(herb.FleeDigging);
+        Assert.Equal(Need.Safety, herb.TopNeed);
+        var (x, y) = (herb.X, herb.Y);
+
+        StepCalmFor(sim, 200, () => sim.Burrows.Count > 0 && sim.InBurrow(herb), herb, carn);
+
+        var burrow = Assert.Single(sim.Burrows);
+        Assert.True(burrow.Dug);
+        Assert.Same(burrow, herb.Burrow);
+        Assert.True(sim.InBurrow(herb));
+        Assert.True(sim.Map.LoopDistance(burrow.X, burrow.Y, x, y) <= 0.5 * sim.Map.TileSize, "no se quedó quieto cavando");
+        Assert.Equal(1, sim.Stats.BurrowsDugFleeing[1]);
+        Assert.Equal(1, sim.Stats.BurrowsDug[1]);
+    }
+
+    [Fact]
+    public void FleeDig_StopsAndRunsWhenThePredatorComesClose()
+    {
+        var (sim, herb, carn) = FleeDigScene(carnTiles: 3);
+        StepCalmFor(sim, 100, () => herb.FleeDigging && herb.DigTicks > 3, herb, carn);
+        Assert.True(herb.FleeDigging);
+
+        (carn.X, carn.Y) = (herb.X + 1.5 * sim.Map.TileSize, herb.Y); // más cerca que fleeSafeTiles
+        StepCalmFor(sim, 1, () => false, herb, carn);
+
+        Assert.False(herb.FleeDigging);
+        Assert.Equal(0, herb.DigTicks);
+        Assert.Empty(sim.Burrows);
+        Assert.Equal(TargetKind.Creature, herb.TargetKind); // huye del carnívoro
+        Assert.Same(carn, herb.TargetCreature);
+    }
+
+    [Fact]
+    public void FleeDig_NotStartedWhenThePredatorIsAlreadyClose()
+    {
+        var (sim, herb, carn) = FleeDigScene(carnTiles: 1.5);
+        StepCalmFor(sim, 60, () => false, herb, carn);
+        Assert.Equal(Need.Safety, herb.TopNeed);
+        Assert.Equal(0, sim.Stats.BurrowsDugFleeing[1]);
+    }
+
+    [Fact]
+    public void BurrowColor_FirstClaimantSetsIt_OthersMustMatch()
+    {
+        var sim = new Simulation(OriginalWith("""
+            { "species": [ { "name": "planta", "initialCount": 0 },
+                           { "name": "herbivoro", "initialCount": 2,
+                             "burrows": { "count": 1, "capacity": 2, "searchTiles": 20, "maxColorDistance": 0.3 } },
+                           { "name": "carnivoro", "initialCount": 1 } ] }
+            """), seed: 1);
+        var burrow = sim.Burrows.Single();
+        var herbs = sim.Creatures.Where(c => c.Def.Name == "herbivoro").ToArray();
+        var carn = sim.Creatures.Single(c => c.Def.Name == "carnivoro");
+        double t = sim.Map.TileSize;
+        (herbs[0].X, herbs[0].Y) = (burrow.X + 2 * t, burrow.Y);
+        (herbs[1].X, herbs[1].Y) = (burrow.X + 2 * t, burrow.Y + 0.3 * t);
+        (carn.X, carn.Y) = (burrow.X + 3 * t, burrow.Y);
+        herbs[0].Genes[0] = new Vec2(0.5, 0);
+        herbs[1].Genes[0] = new Vec2(-0.5, 0); // a 1 de distancia: no la comparten
+
+        StepCalm(sim, () => herbs.All(h => h.TopNeed == Need.Safety) && burrow.Claims > 0, herbs[0], herbs[1], carn);
+        Assert.Equal(1, burrow.Claims);
+        var (inside, outside) = herbs[0].Burrow == burrow ? (herbs[0], herbs[1]) : (herbs[1], herbs[0]);
+        Assert.Equal(inside.Genes[0], burrow.Color);
+        Assert.Null(outside.Burrow);
+        Assert.False(sim.BurrowAdmits(burrow, outside));
+
+        // Con un color parecido sí la dejan entrar.
+        outside.Genes[0] = inside.Genes[0] + new Vec2(0.1, 0.1);
+        Assert.True(sim.BurrowAdmits(burrow, outside));
+        StepCalm(sim, () => burrow.Claims == 2, herbs[0], herbs[1], carn);
+        Assert.Equal(2, burrow.Claims);
+
+        // Pasado el peligro salen los dos y la madriguera pierde el color.
+        (carn.X, carn.Y) = (burrow.X + sim.Map.Width / 2, burrow.Y + sim.Map.Width / 2);
+        StepCalm(sim, () => burrow.Claims == 0, herbs[0], herbs[1], carn);
+        Assert.Equal(0, burrow.Claims);
+        Assert.Null(burrow.Color);
+    }
+
+    [Fact]
+    public void BurrowPlantSlots_TileHoldsFewerPlants_UntilTheBurrowCollapses()
+    {
+        var sim = new Simulation(OriginalWith("""
+            { "species": [ { "name": "planta", "initialCount": 0 },
+                           { "name": "herbivoro", "initialCount": 0,
+                             "burrows": { "count": 2, "plantSlots": 1, "dig": { "abandonDays": 0.01 } } },
+                           { "name": "carnivoro", "initialCount": 0 } ] }
+            """), seed: 1);
+        int max = sim.Config.World.MaxPlantsPerTile;
+        var kept = sim.Burrows[0];
+        var lost = sim.Burrows[1];
+        var keptTile = sim.Map.TileOf(kept.X, kept.Y);
+        var lostTile = sim.Map.TileOf(lost.X, lost.Y);
+        Assert.Equal(max - 1, sim.PlantCapacity(keptTile.X, keptTile.Y));
+        Assert.Equal(max - 1, sim.PlantCapacity(lostTile.X, lostTile.Y));
+        var (_, high) = Extremes(sim);
+        var freeTile = sim.Map.TileOf(high.X + sim.Map.Width / 2, high.Y + sim.Map.Width / 2);
+        if (freeTile != keptTile && freeTile != lostTile) Assert.Equal(max, sim.PlantCapacity(freeTile.X, freeTile.Y));
+
+        kept.Claims = 1; // alguien la tiene reclamada: no se derrumba
+        for (int i = 0; i < 0.02 * sim.Config.World.TicksPerDay; i++) sim.Step();
+
+        Assert.Same(kept, Assert.Single(sim.Burrows));
+        Assert.Equal(max - 1, sim.PlantCapacity(keptTile.X, keptTile.Y));
+        Assert.Equal(max, sim.PlantCapacity(lostTile.X, lostTile.Y));
+    }
+
+    // ------------------------------------------------------------------ derrumbe por el tiempo, ruinas y tierra revuelta
+
+    [Fact]
+    public void Collapse_HalfTheBurrowsFallWithinTheirHalfLife()
+    {
+        var sim = new Simulation(OriginalWith("""
+            { "species": [ { "name": "planta", "initialCount": 0 },
+                           { "name": "herbivoro", "initialCount": 0,
+                             "burrows": { "count": 80, "minSpacingTiles": 1, "collapse": { "halfLifeDays": 0.05 } } },
+                           { "name": "carnivoro", "initialCount": 0 } ] }
+            """), seed: 1);
+        Assert.Equal(80, sim.Burrows.Count);
+        for (int i = 0; i < 0.05 * sim.Config.World.TicksPerDay; i++) sim.Step();
+        Assert.InRange(sim.Burrows.Count, 25, 55); // ~40
+        Assert.Equal(80 - sim.Burrows.Count, sim.Stats.BurrowsAged[1]);
+        for (int i = 0; i < 0.5 * sim.Config.World.TicksPerDay; i++) sim.Step();
+        Assert.True(sim.Burrows.Count <= 2, $"quedan {sim.Burrows.Count} tras 10 vidas medias");
+    }
+
+    [Fact]
+    public void Collapse_OccupantsComeOut()
+    {
+        var sim = new Simulation(OriginalWith("""
+            { "species": [ { "name": "planta", "initialCount": 0 },
+                           { "name": "herbivoro", "initialCount": 2,
+                             "burrows": { "count": 1, "capacity": 2, "searchTiles": 20, "collapse": { "halfLifeDays": 1000 } } },
+                           { "name": "carnivoro", "initialCount": 1 } ] }
+            """), seed: 1);
+        var burrow = sim.Burrows.Single();
+        var herbs = sim.Creatures.Where(c => c.Def.Name == "herbivoro").ToArray();
+        var carn = sim.Creatures.Single(c => c.Def.Name == "carnivoro");
+        double t = sim.Map.TileSize;
+        (herbs[0].X, herbs[0].Y) = (burrow.X + 2 * t, burrow.Y);
+        (herbs[1].X, herbs[1].Y) = (burrow.X + 2 * t, burrow.Y + 0.3 * t);
+        (carn.X, carn.Y) = (burrow.X + 3 * t, burrow.Y);
+        StepCalm(sim, () => burrow.Claims == 2, herbs[0], herbs[1], carn);
+        Assert.Equal(2, burrow.Claims);
+
+        burrow.CollapseTick = sim.Tick + 1;
+        StepCalmFor(sim, 1, () => false, herbs[0], herbs[1], carn);
+
+        Assert.Empty(sim.Burrows);
+        Assert.All(herbs, h => Assert.Null(h.Burrow));
+        Assert.All(herbs, h => Assert.False(sim.InRefuge(h)));
+        Assert.Equal(1, sim.Stats.BurrowsAged[1]);
+    }
+
+    [Fact]
+    public void Collapse_RuinBlocksDiggingNearby_UntilItFades()
+    {
+        var sim = new Simulation(OriginalWith("""
+            { "species": [ { "name": "planta", "initialCount": 0 },
+                           { "name": "herbivoro", "initialCount": 1,
+                             "burrows": { "count": 1, "dig": { "digDays": 0.02, "abandonDays": null }, "collapse": { "halfLifeDays": 1000, "ruinDays": 0.2 } } },
+                           { "name": "carnivoro", "initialCount": 0 } ] }
+            """), seed: 1);
+        var burrow = sim.Burrows.Single();
+        var herb = sim.Creatures.Single();
+        (herb.X, herb.Y) = (burrow.X + 0.5 * sim.Map.TileSize, burrow.Y); // duerme al lado
+
+        burrow.CollapseTick = 1;
+        StepAsleep(sim, 1);
+        Assert.Empty(sim.Burrows);
+        var ruin = Assert.Single(sim.RuinsOf(1));
+        Assert.Equal((burrow.X, burrow.Y), (ruin.X, ruin.Y));
+
+        // Mientras dure la ruina no cava ahí (tendría tiempo de sobra: digDays es 0.02).
+        StepAsleep(sim, (int)(0.15 * sim.Config.World.TicksPerDay));
+        Assert.Empty(sim.Burrows);
+
+        // Cuando la ruina se olvida, cava.
+        StepAsleep(sim, (int)(0.1 * sim.Config.World.TicksPerDay));
+        Assert.Empty(sim.RuinsOf(1));
+        Assert.Single(sim.Burrows);
+    }
+
+    [Fact]
+    public void Collapse_TilledSoilHoldsMorePlants_UpToTheMax()
+    {
+        // Duerme en el mismo lugar: cava, la madriguera se derrumba por abandono, vuelve a cavar...
+        var sim = Diggers(1, """{ "digDays": 0.01, "abandonDays": 0.002 }""");
+        var herb = sim.Creatures.Single();
+        var (_, high) = Extremes(sim);
+        (herb.X, herb.Y) = high;
+        var cfg = sim.Config.Species[1].Burrows!;
+        cfg.Collapse = new CollapseConfig { TilledSlots = 1, MaxTilledSlots = 3 };
+        int max = sim.Config.World.MaxPlantsPerTile;
+        var tile = sim.Map.TileOf(high.X, high.Y);
+
+        StepAsleep(sim, (int)(0.3 * sim.Config.World.TicksPerDay));
+
+        Assert.True(sim.Stats.BurrowsCollapsed[1] >= 4, $"solo {sim.Stats.BurrowsCollapsed[1]} derrumbes");
+        Assert.Equal(3, sim.TilledSlots(tile.X, tile.Y));
+        Assert.Equal(max + 3, sim.PlantCapacity(tile.X, tile.Y));
+    }
+
     // ------------------------------------------------------------------ cobertura (plantas grandes)
 
     /// <summary>

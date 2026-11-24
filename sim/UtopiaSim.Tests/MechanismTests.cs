@@ -156,7 +156,10 @@ public class MechanismTests
     [InlineData("depredadores.json", "dispersion.json")]
     [InlineData("madrigueras.json", "dispersion.json")]
     [InlineData("cobertura.json", "dispersion.json")]
-    [InlineData("diploide.json", "ecosistema.json")]
+    [InlineData("diploide.json", "agua_madrigueras.json")]
+    [InlineData("cavar.json", "agua_madrigueras.json")]
+    [InlineData("arranque.json", "madrigueras_cavadas.json")]
+    [InlineData("cavar_huyendo.json", "madrigueras_cavadas.json")]
     public void ShippedExperiments_BuildAllCombinations(string file, string baseFile)
     {
         var exp = Experiment.Load(ConfigPath(Path.Combine("experimentos", file)));

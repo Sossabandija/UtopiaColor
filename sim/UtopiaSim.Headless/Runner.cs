@@ -104,6 +104,8 @@ static class Runner
             for (int s = 0; s < speciesCount; s++)
             {
                 int p = sim.Population(s);
+                if (!sim.HasArrived(s)) continue; // todavía no llega (arrivalDay): ni mínimo ni extinción
+                if (sim.Tick == (long)Math.Round(sim.Config.Species[s].ArrivalDay * ticksPerDay)) min[s] = p; // recién llegó
                 if (p < min[s]) min[s] = p;
                 if (p > max[s]) max[s] = p;
                 if (extinct[s] == null && IsExtinct(sim, s, o)) extinct[s] = sim.Day;
@@ -136,7 +138,7 @@ static class Runner
     }
 
     static bool IsExtinct(Simulation sim, int s, RunSettings o) =>
-        sim.Population(s) < (o.FunctionalExtinction && !sim.Species[s].IsPlant ? 2 : 1);
+        sim.HasArrived(s) && sim.Population(s) < (o.FunctionalExtinction && !sim.Species[s].IsPlant ? 2 : 1);
 
     static bool ShouldStop(StopRule rule, Simulation sim, double?[] extinct, bool hasAnimals) => rule switch
     {
@@ -150,7 +152,7 @@ static class Runner
         for (int s = 0; s < sim.Species.Count; s++)
         {
             if (animalsOnly && sim.Species[s].IsPlant) continue;
-            if (sim.Population(s) > 0) return false;
+            if (sim.Population(s) > 0 || !sim.HasArrived(s)) return false;
         }
         return true;
     }

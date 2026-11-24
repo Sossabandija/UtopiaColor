@@ -1,0 +1,37 @@
+// ¿Funcionan igual las madrigueras si las cavan los propios herbívoros? Base: agua_madrigueras.json
+// (agua + 30 madrigueras fijas de 2 lugares, repartidas al azar; era ecosistema.json antes de este experimento).
+//
+//   dotnet run -c Release --project UtopiaSim.Headless -- --compare configs/experimentos/cavar.json
+//
+// Cavando, un herbívoro que duerme lejos de otras madrigueras hace una donde está (0.1 días de sueño), y las que nadie
+// usa en 3 días se derrumban. Las madrigueras quedan donde viven los herbívoros, pero su número sigue a la población:
+// sin tope, un refugio de "número fijo" se vuelve uno "proporcional", que en teoría estabiliza menos.
+//
+// Variantes:
+//   cavar           sin madrigueras iniciales; las cavan, hasta 30 (el mismo cupo total que la base)
+//   sin_tope        las 30 iniciales y además cavan, hasta 300
+//   cavar+sin_tope  sin iniciales; las cavan, hasta 300
+//
+// Resultado (2026-11-24, semillas 1-16, 100 días, ~20 min):
+//   base (30 fijas) 8/16 · cavar (hasta 30) 8/16 · sin_tope (30 + cavar) 12/16 · cavar+sin_tope 9/16
+// "Sin tope" no crece sin límite: se detiene en ~85-95 madrigueras, porque la separación mínima (3 casillas) llena la
+// tierra seca. Sigue siendo un refugio de número fijo, pero más grande (~180 lugares): en madriguera pasa del ~8-10% al ~20%.
+// Con sin_tope, las 4 corridas perdidas cayeron en los días 1-2 (arranque de los carnívoros); las 12 que pasaron el
+// arranque llegaron al día 100. En la base, 3 de las 11 que pasaron el arranque cayeron después (días 11-22).
+// Partiendo sin madrigueras (cavar+sin_tope) hay un caso nuevo: en la semilla 4 se extinguieron las plantas (día 83).
+// sin_tope quedó guardado como madrigueras_cavadas.json, y ecosistema.json parte de ahí.
+{
+  "base": "../agua_madrigueras.json",
+  "days": 100,
+  "runs": 16,
+  "firstSeed": 1,
+
+  "mechanisms": {
+    "cavar": {
+      "species": [ { "name": "herbivoro", "burrows": { "count": 0, "dig": { "maxCount": 30 } } } ]
+    },
+    "sin_tope": {
+      "species": [ { "name": "herbivoro", "burrows": { "dig": { "maxCount": 300 } } } ]
+    }
+  }
+}
